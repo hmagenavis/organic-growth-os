@@ -52,11 +52,26 @@ export type {
   UpdateSiteSettingsInput,
 } from './repositories/index.js';
 
+/**
+ * Authorization. The policy lives in `@organic-os/authorization`; these are the two
+ * pieces that need a database: the membership bootstrap that proves membership before
+ * any tenant context exists, and the canonical authorized tenant transaction.
+ */
+export { createMembershipStore } from './authorization/membership-store.js';
+
+export {
+  createAuthorizationService,
+  type AuthorizationService,
+  type AuthorizationServiceOptions,
+  type AuthorizedOrganizationSession,
+} from './authorization/with-authorized-organization.js';
+
 export type {
   AuditActorKind,
   AuditResult,
   AuditSource,
   AutopilotMode,
+  ClientAccessMode,
   ClientStatus,
   IntegrationStatus,
   IntegrationTokenKind,

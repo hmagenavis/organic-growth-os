@@ -3,7 +3,7 @@ import { and, asc, eq } from 'drizzle-orm';
 import type { Transaction } from '../client.js';
 import { newId } from '../ids.js';
 import { memberships } from '../schema/index.js';
-import type { MembershipRole } from '../schema/enums.js';
+import type { ClientAccessMode, MembershipRole } from '../schema/enums.js';
 import type { TenantContext } from '../tenant/context.js';
 import { requireRow } from './util.js';
 
@@ -12,6 +12,8 @@ export type MembershipRecord = typeof memberships.$inferSelect;
 export interface CreateMembershipInput {
   userId: string;
   role: MembershipRole;
+  /** Required, never inferred (migration 0004). */
+  clientAccessMode: ClientAccessMode;
 }
 
 export interface MembershipRepository {
@@ -20,6 +22,7 @@ export interface MembershipRepository {
   findById(id: string): Promise<MembershipRecord | null>;
   findByUserId(userId: string): Promise<MembershipRecord | null>;
   updateRole(id: string, role: MembershipRole): Promise<MembershipRecord | null>;
+  updateClientAccessMode(id: string, mode: ClientAccessMode): Promise<MembershipRecord | null>;
   delete(id: string): Promise<boolean>;
 }
 
@@ -45,6 +48,7 @@ export function createMembershipRepository(
           organizationId: tenant.organizationId,
           userId: input.userId,
           role: input.role,
+          clientAccessMode: input.clientAccessMode,
         })
         .returning();
 
@@ -79,6 +83,19 @@ export function createMembershipRepository(
       const rows = await tx
         .update(memberships)
         .set({ role })
+        .where(and(eq(memberships.id, id), scoped))
+        .returning();
+
+      return rows[0] ?? null;
+    },
+
+    async updateClientAccessMode(
+      id: string,
+      clientAccessMode: ClientAccessMode,
+    ): Promise<MembershipRecord | null> {
+      const rows = await tx
+        .update(memberships)
+        .set({ clientAccessMode })
         .where(and(eq(memberships.id, id), scoped))
         .returning();
 

@@ -1,3 +1,4 @@
+import { ORGANIZATION_ROLES } from '@organic-os/authorization';
 import { getTableConfig } from 'drizzle-orm/pg-core';
 import { Pool } from 'pg';
 import { afterAll, beforeAll, describe, expect, inject, it } from 'vitest';
@@ -178,6 +179,98 @@ describe('row level security configuration', () => {
     );
 
     expect(result.rows.map((row) => row.extname)).toEqual(['citext', 'vector']);
+  });
+});
+
+describe('authorization schema (migration 0004)', () => {
+  it('makes memberships.client_access_mode mandatory and defaultless', async () => {
+    // No default: a membership must state its mode, so an omitted decision can never
+    // be read as the permissive one (docs/SECURITY.md §3).
+    const result = await migratorPool.query<{
+      is_nullable: string;
+      column_default: string | null;
+      udt_name: string;
+    }>(
+      `SELECT is_nullable, column_default, udt_name
+       FROM information_schema.columns
+       WHERE table_schema = 'public'
+         AND table_name = 'memberships'
+         AND column_name = 'client_access_mode'`,
+    );
+
+    expect(result.rows).toHaveLength(1);
+    expect(result.rows[0]?.is_nullable).toBe('NO');
+    expect(result.rows[0]?.column_default).toBeNull();
+    expect(result.rows[0]?.udt_name).toBe('client_access_mode');
+  });
+
+  it('offers exactly two client access modes', async () => {
+    const result = await migratorPool.query<{ label: string }>(
+      `SELECT e.enumlabel AS label
+       FROM pg_enum e JOIN pg_type t ON t.oid = e.enumtypid
+       WHERE t.typname = 'client_access_mode'
+       ORDER BY e.enumsortorder`,
+    );
+
+    expect(result.rows.map((row) => row.label)).toEqual(['all_clients', 'scoped']);
+  });
+
+  it('keeps the organization role enum aligned with the authorization registry', async () => {
+    const result = await migratorPool.query<{ label: string }>(
+      `SELECT e.enumlabel AS label
+       FROM pg_enum e JOIN pg_type t ON t.oid = e.enumtypid
+       WHERE t.typname = 'membership_role'
+       ORDER BY e.enumsortorder`,
+    );
+
+    // The database enum and the code registry are two representations of one set.
+    expect(result.rows.map((row) => row.label)).toEqual([...ORGANIZATION_ROLES]);
+    expect(result.rows.map((row) => row.label)).not.toContain('super_admin');
+  });
+
+  it('forbids an organization-wide client_viewer at the database level', async () => {
+    const result = await migratorPool.query<{ conname: string }>(
+      `SELECT conname FROM pg_constraint
+       WHERE conrelid = 'memberships'::regclass AND conname = 'memberships_client_viewer_is_scoped'`,
+    );
+
+    expect(result.rows).toHaveLength(1);
+  });
+
+  it('adds the bootstrap policies and nothing wider', async () => {
+    const result = await migratorPool.query<{
+      tablename: string;
+      policyname: string;
+      qual: string;
+    }>(
+      `SELECT tablename, policyname, qual
+       FROM pg_policies
+       WHERE schemaname = 'public' AND policyname LIKE '%authorization_bootstrap%'
+       ORDER BY tablename`,
+    );
+
+    expect(result.rows.map((row) => row.tablename)).toEqual(['memberships', 'organizations']);
+
+    for (const policy of result.rows) {
+      // Both are gated on there being no tenant context, which is what makes them
+      // disjoint from the tenant policies rather than additive to them.
+      expect(policy.qual, `${policy.policyname} must be inert under a tenant context`).toContain(
+        'current_org_id',
+      );
+      expect(policy.qual, `${policy.policyname} must key on the caller`).toContain('authz_user_id');
+    }
+  });
+
+  it('grants the runtime role no new write privilege on memberships or organizations', async () => {
+    const result = await migratorPool.query<{ table_name: string; privilege_type: string }>(
+      `SELECT table_name, privilege_type
+       FROM information_schema.role_table_grants
+       WHERE grantee = 'organic_os_runtime' AND table_name IN ('organizations')
+       ORDER BY privilege_type`,
+    );
+
+    // 0002 granted SELECT and UPDATE on organizations; 0004 added no more.
+    expect(result.rows.map((row) => row.privilege_type).sort()).toEqual(['SELECT', 'UPDATE']);
   });
 });
 

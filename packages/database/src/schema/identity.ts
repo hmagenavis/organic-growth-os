@@ -1,7 +1,7 @@
 import { boolean, jsonb, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 
 import { bytea, citext, inet, type JsonObject } from './columns.js';
-import { membershipRoleEnum } from './enums.js';
+import { clientAccessModeEnum, membershipRoleEnum } from './enums.js';
 
 export const organizations = pgTable('organizations', {
   id: uuid('id').primaryKey(),
@@ -31,6 +31,12 @@ export const memberships = pgTable('memberships', {
   organizationId: uuid('organization_id').notNull(),
   userId: uuid('user_id').notNull(),
   role: membershipRoleEnum('role').notNull(),
+  /**
+   * Explicit, never inferred. `scoped` consults `membership_client_scopes`, where
+   * zero rows means zero clients; `all_clients` reaches every client of the
+   * organization the role permits (migration 0004).
+   */
+  clientAccessMode: clientAccessModeEnum('client_access_mode').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });

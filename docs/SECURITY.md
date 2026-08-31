@@ -64,11 +64,35 @@ API boundary AND at the execution engine for write actions):
 | View analytics/opportunities | ✓ | ✓ | ✓ | ✓ | ✓ (scoped clients) |
 | View AI costs | ✓ | — | — | — | — |
 
-- Client-level restriction is normalized in `membership_client_scopes`
-  (membership_id, client_id, unique pair, FK cascade): rows present = membership is
-  limited to those clients; no rows = all clients the role permits. Applies to any
-  role, mandatory for `client_viewer`.
-- Deny by default; permissions are additive; the matrix lives in code as data (testable).
+- **Client-level restriction is explicit** (ADR-0016, migration 0004).
+  `memberships.client_access_mode` is `all_clients` or `scoped`, `NOT NULL`, with no
+  database default:
+  - `all_clients` — every client of the organization, subject to the role.
+  - `scoped` — only the `membership_client_scopes` rows (membership_id, client_id,
+    unique pair, FK cascade). **Zero rows means zero clients**, never "all".
+  Applies to any role; `client_viewer` is constrained to `scoped` by a CHECK
+  constraint. Authorizing a client resource requires the role permission **and** the
+  client access check **and** proof that the client belongs to the authorized
+  organization — never one of the three.
+- Deny by default; permissions are additive; the matrix lives in code as data
+  (`packages/authorization/src/registry.ts`), versioned and table-tested against every
+  role × permission cell.
+- **Authorization is a separate package from authentication.** `@organic-os/auth`
+  answers "who is this"; `@organic-os/authorization` answers "what may they do". The
+  latter consumes a user id and does not import the former.
+- **Membership bootstrap** (ADR-0015). Verifying that a user belongs to a *requested*
+  organization happens before any tenant context exists, through a narrow self-lookup
+  policy keyed on the transaction-local `app.authz_user_id`. It returns only the
+  caller's own memberships, is inert whenever `app.current_org_id` is set, and grants
+  no tenant access. No BYPASSRLS, no SECURITY DEFINER, no privileged connection.
+- **The organization id in a request is routing input, never authorization.** It is
+  verified against a persisted membership on every request; nothing is cached, and no
+  organization choice is stored in the session and trusted thereafter.
+- **Failure responses.** 401 when there is no authentic session. 403 only once the
+  caller is a proven member and only about the caller's own role. Everything about a
+  resource the caller cannot reach — absent, another tenant's, or outside its client
+  scope — is an identical 404, so an authorization boundary cannot be used to
+  enumerate resources.
 
 **Platform administration (separate from org RBAC):** `users.is_platform_admin`
 (Phase-0 design). Not an organization role; grants access only to a dedicated

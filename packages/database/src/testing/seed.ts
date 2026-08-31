@@ -49,6 +49,7 @@ async function seedOne(
     organizationId: organization.id,
     userId: user.id,
     role: 'agency_admin',
+    clientAccessMode: 'all_clients',
   });
 
   const tenant: TenantContext = {

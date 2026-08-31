@@ -1,8 +1,8 @@
 # PHASE-0.md — Foundation
 
-Status: IN PROGRESS — §0.1, §0.2 and the authentication half of §0.3 complete and
-verified (2026-08-31, see PHASE-0.1/0.2/0.3-IMPLEMENTATION.md); RBAC (the other half of
-§0.3) and §0.4–§0.6 not started
+Status: IN PROGRESS — §0.1, §0.2, the authentication half of §0.3, and the
+authorization core (§0.4.1) complete and verified (2026-08-31, see
+PHASE-0.1/0.2/0.3/0.4.1-IMPLEMENTATION.md); §0.4.2 onwards and §0.5–§0.6 not started
 PRD source: §165
 Duration estimate: 2–3 weeks of focused work
 Exit gate: BUILD → TEST → REVIEW → SECURITY → COST REVIEW (PRD §0)
@@ -23,6 +23,7 @@ is production-grade — no placeholders (PRD §0).
 - Packages created: `contracts`, `config`, `observability`. Packages are created by
   the sub-phase that fills them — `database` in §0.2, `auth` in §0.3, `ui` with the
   dashboard in §0.4 — because empty placeholder packages are forbidden (PRD §0).
+  `authorization` was added in §0.4.1 for the same reason.
 - CI (GitHub Actions): format, lint, typecheck, test, build, critical-vulnerability
   audit; blocking. Integration (Testcontainers Postgres/Redis) and the
   tenant-isolation suite are added by §0.2/§0.3 when there is a database to test.
@@ -52,18 +53,34 @@ load-bearing: authentication asks *who is this*, authorization asks *what may th
 **0.3b RBAC — moved to 0.4**, where it joins the tenant-context selection it depends
 on. Audit-log rows for auth events move with it: `audit_logs` is tenant-scoped and an
 authentication event has no organization at the moment it happens.
-- RBAC matrix as data + authorization module; deny by default; org roles only
-  (agency_admin, seo_manager, content_editor, analyst, client_viewer) with
-  normalized `membership_client_scopes` restriction.
-- Platform administration: `users.is_platform_admin` flag, settable only by
-  migration/seed or audited manual SQL (no API), gating a separate platform-admin
-  route group (SECURITY.md §3).
-- Audit log writes for all auth and admin mutations.
 
-### 0.4 API & web
+### 0.4.1 Authorization core & organization context — COMPLETE
+- `@organic-os/authorization`: versioned permission registry as data, deny-by-default,
+  org roles only. Explicit `client_access_mode` (all_clients | scoped) replaces the
+  ambiguous empty-scope convention (ADR-0016).
+- Membership bootstrap: a narrow self-lookup RLS policy keyed on the transaction-local
+  `app.authz_user_id`, so membership is proven *before* `app.current_org_id` is set,
+  with no BYPASSRLS and no SECURITY DEFINER (ADR-0015).
+- `withAuthorizedOrganization` — the one canonical authorized tenant transaction.
+- Platform administration confirmed separate: `is_platform_admin` is read nowhere in
+  the authorization path.
+- 401 / 403 / non-enumerating 404 policy documented and tested.
+- Audit boundary documented: pre-organization security events stay structured logs;
+  `audit_logs` is written only under a proven organization. No organization id is
+  invented.
+
+### 0.4.2 Member & tenant administration — NOT STARTED
+- Member mutation API (invite/create, role change, scope change, removal) with session
+  revocation/rotation on security-sensitive changes.
+- Clients and sites CRUD APIs behind the registry's existing write permissions.
+- Audit log writes for admin mutations.
+- Organization provisioning / first-admin workflow.
+- Platform-admin route group.
+
+### 0.4.3 API & web
 - Fastify app: Zod validation boundary, problem+json errors, request IDs, OpenAPI
   generation from `contracts`; Phase-0 endpoint group from API-CONTRACTS.md §2.
-- Next.js dashboard: login, org switcher-free single-org view, clients list/create,
+- Next.js dashboard: login, organization selection, clients list/create,
   sites list/create, members & roles admin, audit log view (admin).
   Loading/error/empty states for every screen (PRD §190).
 

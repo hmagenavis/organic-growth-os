@@ -78,13 +78,16 @@ users           id, email (citext unique), password_hash, name, locale, mfa fiel
                 last_login_at, created_at, updated_at
 memberships     id, organization_id, user_id, role (enum: agency_admin, seo_manager,
                 content_editor, analyst, client_viewer),
+                client_access_mode (enum: all_clients, scoped) NOT NULL, no default,
+                  -- explicit, never inferred (ADR-0016, migration 0004)
+                CHECK (role <> 'client_viewer' OR client_access_mode = 'scoped'),
                 UNIQUE(organization_id, user_id)
 membership_client_scopes
                 id, membership_id FK→memberships ON DELETE CASCADE,
                 client_id FK→clients ON DELETE CASCADE, created_at,
                 UNIQUE(membership_id, client_id)
-                -- rows restrict the membership to listed clients;
-                -- no rows = access to all clients of the organization (role permitting)
+                -- consulted only when client_access_mode = 'scoped';
+                -- then zero rows = access to zero clients, never to all of them
 sessions        id, user_id, token_hash (sha256 of the opaque token), expires_at,
                 last_used_at (idle timeout), revoked_at (logout/rotation/revocation),
                 ip, user_agent, created_at
@@ -118,6 +121,16 @@ Notes:
   It does not bypass RLS on tenant data paths. Revisit (dedicated table + MFA
   requirement) before any additional platform operators are added.
 - Role semantics and permission matrix: `SECURITY.md §RBAC`.
+- **Client access is stated, not inferred.** `client_access_mode` removes the
+  Phase-0.2 convention in which an empty `membership_client_scopes` collection meant
+  "all clients". The column is `NOT NULL` with no default, so a membership cannot be
+  created without a deliberate decision (ADR-0016).
+- **Membership bootstrap.** `memberships` and `organizations` each carry one extra
+  permissive SELECT policy for the runtime role, keyed on the transaction-local
+  `app.authz_user_id` and inert whenever `app.current_org_id` is set. It lets an
+  authenticated user resolve *its own* memberships before any tenant context exists,
+  which is what allows tenant context to be established only after authorization
+  (ADR-0015, migration 0004).
 
 ---
 

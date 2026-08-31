@@ -1,7 +1,8 @@
 # Architecture Decision Records
 
 Format: context → decision → consequences. Status values: Proposed / Accepted /
-Superseded. All ADRs below are **Accepted** as of the 2026-08-31 Phase 0 go decision.
+Superseded. ADRs 0001–0014 are **Accepted** as of the 2026-08-31 Phase 0 go decision;
+0015–0016 were accepted during implementation of sub-phase 0.4.1.
 Accepted decisions are not reopened unless implementation reveals a concrete blocker;
 a blocker produces a new ADR that supersedes the old one.
 
@@ -21,6 +22,8 @@ a blocker produces a new ADR that supersedes the old one.
 | [0012](0012-deterministic-first-funnel.md) | Deterministic-first analysis funnel; LLM as filtered leaf | Accepted |
 | [0013](0013-cookie-sessions-over-jwt.md) | Server-side cookie sessions instead of JWTs | Accepted |
 | [0014](0014-default-autopilot-review.md) | Default autopilot = REVIEW + configurable Safety Graduation Policy | Accepted |
+| [0015](0015-membership-bootstrap-rls-policy.md) | Membership bootstrap via a narrow self-lookup RLS policy | Accepted |
+| [0016](0016-explicit-client-access-mode.md) | Explicit `client_access_mode` on a membership | Accepted |
 
 ## Implementation-time addenda
 

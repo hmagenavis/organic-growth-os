@@ -8,6 +8,16 @@ export {
   type LoginRequestBody,
   type LoginResponse,
 } from './auth.js';
+export {
+  clientAccessModeSchema,
+  organizationListResponseSchema,
+  organizationMembershipSchema,
+  organizationResponseSchema,
+  organizationRoleSchema,
+  type OrganizationListResponse,
+  type OrganizationMembership,
+  type OrganizationResponse,
+} from './authorization.js';
 export { healthResponseSchema, type HealthResponse } from './health.js';
 export {
   problemDetailsSchema,

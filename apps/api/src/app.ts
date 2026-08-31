@@ -1,11 +1,13 @@
 import { randomUUID } from 'node:crypto';
 
+import type { AuthorizationService } from '@organic-os/database';
 import type { Logger } from '@organic-os/observability';
 import Fastify, { type FastifyInstance } from 'fastify';
 
 import type { AuthDependencies } from './auth/context.js';
 import { registerAuthPlugin } from './auth/plugin.js';
 import { registerAuthRoutes } from './auth/routes.js';
+import { registerAuthorizationRoutes } from './authorization/routes.js';
 import { registerErrorHandlers } from './errors.js';
 import { registerHealthRoute } from './routes/health.js';
 
@@ -20,6 +22,12 @@ export interface BuildAppOptions {
    * `/auth/*` route exists at all rather than an unprotected stub.
    */
   auth?: AuthDependencies;
+  /**
+   * Authorization wiring. Requires `auth`: an authorization route with no
+   * authentication in front of it would have no identity to authorize, so the two are
+   * registered together or not at all.
+   */
+  authorization?: AuthorizationService;
 }
 
 /**
@@ -30,7 +38,7 @@ export interface BuildAppOptions {
  * (docs/ADR/0013, docs/SECURITY.md §8).
  */
 export function buildApp(options: BuildAppOptions): FastifyInstance {
-  const { logger, serviceVersion, startedAt = Date.now(), auth } = options;
+  const { logger, serviceVersion, startedAt = Date.now(), auth, authorization } = options;
 
   const app = Fastify({
     // Request logging is emitted explicitly below so the logged fields stay controlled
@@ -69,6 +77,10 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
   if (auth !== undefined) {
     registerAuthPlugin(app, { deps: auth, logger });
     registerAuthRoutes(app, { deps: auth, logger });
+
+    if (authorization !== undefined) {
+      registerAuthorizationRoutes(app, { service: authorization, logger });
+    }
   }
 
   return app;

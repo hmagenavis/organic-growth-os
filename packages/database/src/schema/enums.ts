@@ -12,6 +12,14 @@ export const membershipRoleEnum = pgEnum('membership_role', [
   'client_viewer',
 ]);
 
+/**
+ * Whether a membership reaches every client of its organization or only the clients
+ * listed in `membership_client_scopes`. Stated explicitly on the membership so an
+ * empty scope collection can never be read as "all" (migration 0004,
+ * docs/SECURITY.md §3).
+ */
+export const clientAccessModeEnum = pgEnum('client_access_mode', ['all_clients', 'scoped']);
+
 export const autopilotModeEnum = pgEnum('autopilot_mode', [
   'off',
   'review',
@@ -34,6 +42,7 @@ export const integrationTokenKindEnum = pgEnum('integration_token_kind', [
 ]);
 
 export type MembershipRole = (typeof membershipRoleEnum.enumValues)[number];
+export type ClientAccessMode = (typeof clientAccessModeEnum.enumValues)[number];
 export type AutopilotMode = (typeof autopilotModeEnum.enumValues)[number];
 export type IntegrationStatus = (typeof integrationStatusEnum.enumValues)[number];
 export type IntegrationTokenKind = (typeof integrationTokenKindEnum.enumValues)[number];

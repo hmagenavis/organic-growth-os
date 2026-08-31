@@ -4,7 +4,7 @@ import type { Database } from './client.js';
 import { newId } from './ids.js';
 import { requireRow } from './repositories/util.js';
 import { memberships, organizations, users } from './schema/index.js';
-import type { MembershipRole } from './schema/enums.js';
+import type { ClientAccessMode, MembershipRole } from './schema/enums.js';
 import { runWithTenantContext } from './tenant/transaction.js';
 
 /**
@@ -81,6 +81,12 @@ export interface ProvisionMembershipInput {
   organizationId: string;
   userId: string;
   role: MembershipRole;
+  /**
+   * Required, never inferred. Leaving it to a default is exactly the ambiguity
+   * migration 0004 removed: an empty client scope must mean zero clients for a
+   * `scoped` membership and must never be read as "all" (docs/SECURITY.md §3).
+   */
+  clientAccessMode: ClientAccessMode;
 }
 
 /**
@@ -101,6 +107,7 @@ export async function provisionMembership(
         organizationId: input.organizationId,
         userId: input.userId,
         role: input.role,
+        clientAccessMode: input.clientAccessMode,
       })
       .returning();
 

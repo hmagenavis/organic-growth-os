@@ -1,8 +1,10 @@
 import { createAuthConfig } from '@organic-os/auth';
 import { serverEnv } from '@organic-os/config/server';
 import {
+  createAuthorizationService,
   createAuthStore,
   createDatabase,
+  createMembershipStore,
   parseDatabaseEnv,
   runtimeDatabaseEnvSchema,
   describeConnection,
@@ -58,6 +60,13 @@ async function main(): Promise<void> {
     auth: buildAuthDependencies({
       store: createAuthStore(database.db),
       config: authConfig,
+    }),
+    // Authorization is per-request and uncached: the membership store is a thin
+    // wrapper over the same runtime pool, holding no state between requests, so a
+    // membership or role change takes effect on the next call (docs/SECURITY.md §3).
+    authorization: createAuthorizationService({
+      db: database.db,
+      store: createMembershipStore(database.db),
     }),
   });
 
