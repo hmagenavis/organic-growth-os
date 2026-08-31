@@ -20,6 +20,22 @@ export {
 } from './authorization.js';
 export { healthResponseSchema, type HealthResponse } from './health.js';
 export {
+  clientAccessSelectionSchema,
+  createMemberRequestSchema,
+  memberListResponseSchema,
+  memberResponseSchema,
+  memberSchema,
+  replaceMemberScopesRequestSchema,
+  updateMemberRoleRequestSchema,
+  type ClientAccessSelection,
+  type CreateMemberRequestBody,
+  type Member,
+  type MemberListResponse,
+  type MemberResponse,
+  type ReplaceMemberScopesRequestBody,
+  type UpdateMemberRoleRequestBody,
+} from './membership-administration.js';
+export {
   problemDetailsSchema,
   PROBLEM_CONTENT_TYPE,
   PROBLEM_TYPE_BASE_URL,

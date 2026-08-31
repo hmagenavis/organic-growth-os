@@ -19,6 +19,7 @@
     "db:migrate": "pnpm --filter @organic-os/database db:migrate",
     "db:status": "pnpm --filter @organic-os/database db:status",
     "db:reset": "pnpm --filter @organic-os/database db:reset",
+    "provision:organization": "pnpm --filter @organic-os/database provision:organization --",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "sessions:cleanup": "pnpm --filter @organic-os/worker sessions:cleanup"

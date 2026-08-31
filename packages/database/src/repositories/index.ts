@@ -60,7 +60,7 @@ export type {
   AddMembershipClientScopeInput,
   MembershipClientScopeRecord,
 } from './membership-client-scopes.js';
-export type { CreateMembershipInput, MembershipRecord } from './memberships.js';
+export type { CreateMembershipInput, MembershipRecord, MembershipWithUser } from './memberships.js';
 export type { OrganizationRecord, UpdateOrganizationInput } from './organizations.js';
 export type { SiteSettingsRecord, UpdateSiteSettingsInput } from './site-settings.js';
 export type { CreateSiteInput, SiteRecord, UpdateSiteInput } from './sites.js';

@@ -42,10 +42,12 @@ jobs:
         run: pnpm test
 
       # Real PostgreSQL via Testcontainers: Row Level Security, tenant isolation and
-      # the authentication and authorization paths are never verified against a
-      # substitute engine (docs/TESTING.md §2). Covers the database package (including
-      # the membership bootstrap policies and the 0003→0004 upgrade migration) and the
-      # API's authentication and authorization endpoints.
+      # the authentication, authorization and administration paths are never verified
+      # against a substitute engine (docs/TESTING.md §2). Covers the database package
+      # (membership bootstrap policies, member administration, the concurrency race on
+      # the last-agency-admin invariant, first-organization provisioning, and the
+      # 0003→0004 and 0004→0005 upgrade migrations) and the API's authentication,
+      # authorization and member-administration endpoints.
       - name: Integration tests (PostgreSQL)
         run: pnpm test:integration
 

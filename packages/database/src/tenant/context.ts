@@ -5,7 +5,17 @@ import { z } from 'zod';
  * itself.
  */
 export const tenantActorSchema = z.discriminatedUnion('kind', [
-  z.object({ kind: z.literal('user'), userId: z.uuid() }),
+  z.object({
+    kind: z.literal('user'),
+    userId: z.uuid(),
+    /**
+     * The membership this user is acting through, when the context was derived from
+     * a proven one (`withAuthorizedOrganization`). Optional because a user context
+     * can legitimately exist without one — provisioning, and tenant work seeded by
+     * tests — and because it is recorded, never consulted for authorization.
+     */
+    membershipId: z.uuid().optional(),
+  }),
   z.object({ kind: z.literal('system') }),
   z.object({ kind: z.literal('worker'), queue: z.string().min(1).max(100) }),
 ]);

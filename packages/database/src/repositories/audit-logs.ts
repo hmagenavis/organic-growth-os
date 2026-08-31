@@ -39,14 +39,25 @@ export interface AuditLogRepository {
 function actorFields(tenant: TenantContext): {
   actorKind: 'user' | 'system' | 'worker';
   actorId: string | null;
+  actorMembershipId: string | null;
 } {
   switch (tenant.actor.kind) {
     case 'user':
-      return { actorKind: 'user', actorId: tenant.actor.userId };
+      return {
+        actorKind: 'user',
+        actorId: tenant.actor.userId,
+        // From the context, never from `input`: an entry cannot be attributed to a
+        // membership the caller was not acting through.
+        actorMembershipId: tenant.actor.membershipId ?? null,
+      };
     case 'worker':
-      return { actorKind: 'worker', actorId: `worker:${tenant.actor.queue}` };
+      return {
+        actorKind: 'worker',
+        actorId: `worker:${tenant.actor.queue}`,
+        actorMembershipId: null,
+      };
     case 'system':
-      return { actorKind: 'system', actorId: null };
+      return { actorKind: 'system', actorId: null, actorMembershipId: null };
   }
 }
 
@@ -67,6 +78,7 @@ export function createAuditLogRepository(
           organizationId: tenant.organizationId,
           actorKind: actor.actorKind,
           actorId: actor.actorId,
+          actorMembershipId: actor.actorMembershipId,
           action: input.action,
           targetType: input.targetType,
           targetId: input.targetId ?? null,

@@ -1,8 +1,8 @@
-import { and, asc, eq } from 'drizzle-orm';
+import { and, asc, eq, or } from 'drizzle-orm';
 
 import type { Transaction } from '../client.js';
 import { newId } from '../ids.js';
-import { memberships } from '../schema/index.js';
+import { memberships, users } from '../schema/index.js';
 import type { ClientAccessMode, MembershipRole } from '../schema/enums.js';
 import type { TenantContext } from '../tenant/context.js';
 import { requireRow } from './util.js';
@@ -16,6 +16,23 @@ export interface CreateMembershipInput {
   clientAccessMode: ClientAccessMode;
 }
 
+/**
+ * A membership together with the identity behind it.
+ *
+ * The user projection is written out field by field rather than spread: `users` also
+ * carries `password_hash` and `is_platform_admin`, and neither may reach an
+ * administration response (docs/SECURITY.md §3). A `select(users)` that later grew a
+ * column would leak it silently; this cannot.
+ */
+export interface MembershipWithUser {
+  readonly membership: MembershipRecord;
+  readonly user: {
+    readonly id: string;
+    readonly email: string;
+    readonly name: string;
+  };
+}
+
 export interface MembershipRepository {
   create(input: CreateMembershipInput): Promise<MembershipRecord>;
   list(): Promise<MembershipRecord[]>;
@@ -24,6 +41,31 @@ export interface MembershipRepository {
   updateRole(id: string, role: MembershipRole): Promise<MembershipRecord | null>;
   updateClientAccessMode(id: string, mode: ClientAccessMode): Promise<MembershipRecord | null>;
   delete(id: string): Promise<boolean>;
+
+  /** Every membership of the organization with its user's directory fields. */
+  listWithUsers(): Promise<MembershipWithUser[]>;
+  findWithUserById(id: string): Promise<MembershipWithUser | null>;
+
+  /**
+   * Locks the rows a membership mutation must reason about, for the rest of the
+   * transaction.
+   *
+   * The set is: every `agency_admin` membership of the organization, plus the target
+   * — the target because it is being written, the admins because the invariant "this
+   * organization always has at least one agency admin" is a statement about all of
+   * them at once. Reading the admins without locking them is the classic
+   * check-then-act race: two transactions each see two admins and each demotes one.
+   *
+   * `ORDER BY id` is not cosmetic. Every caller locks the same rows in the same
+   * order, so two concurrent administrators queue behind one another instead of
+   * deadlocking. Under READ COMMITTED the predicate is re-evaluated against the
+   * committed row version once the lock is granted, so the second transaction sees
+   * the first one's effect rather than the snapshot it started with.
+   */
+  lockForAdministration(targetMembershipId: string): Promise<MembershipRecord[]>;
+
+  /** Locks one membership of this organization for the rest of the transaction. */
+  lockById(id: string): Promise<MembershipRecord | null>;
 }
 
 /**
@@ -109,6 +151,60 @@ export function createMembershipRepository(
         .returning({ id: memberships.id });
 
       return rows.length > 0;
+    },
+
+    async listWithUsers(): Promise<MembershipWithUser[]> {
+      // The join is what makes the `users` read legal: the policy from migration 0002
+      // admits a user row only while that user holds a membership in the current
+      // organization, which is exactly the join predicate.
+      return tx
+        .select({
+          membership: memberships,
+          user: { id: users.id, email: users.email, name: users.name },
+        })
+        .from(memberships)
+        .innerJoin(users, eq(users.id, memberships.userId))
+        .where(scoped)
+        .orderBy(asc(memberships.createdAt), asc(memberships.id));
+    },
+
+    async findWithUserById(id: string): Promise<MembershipWithUser | null> {
+      const rows = await tx
+        .select({
+          membership: memberships,
+          user: { id: users.id, email: users.email, name: users.name },
+        })
+        .from(memberships)
+        .innerJoin(users, eq(users.id, memberships.userId))
+        .where(and(eq(memberships.id, id), scoped))
+        .limit(1);
+
+      return rows[0] ?? null;
+    },
+
+    async lockForAdministration(targetMembershipId: string): Promise<MembershipRecord[]> {
+      return tx
+        .select()
+        .from(memberships)
+        .where(
+          and(
+            scoped,
+            or(eq(memberships.role, 'agency_admin'), eq(memberships.id, targetMembershipId)),
+          ),
+        )
+        .orderBy(asc(memberships.id))
+        .for('update');
+    },
+
+    async lockById(id: string): Promise<MembershipRecord | null> {
+      const rows = await tx
+        .select()
+        .from(memberships)
+        .where(and(eq(memberships.id, id), scoped))
+        .limit(1)
+        .for('update');
+
+      return rows[0] ?? null;
     },
   };
 }

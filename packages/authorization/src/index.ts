@@ -53,6 +53,19 @@ export {
   type AuthorizationFailure,
 } from './errors.js';
 
+export {
+  assertAgencyAdminRemains,
+  assertClientAccessAllowedForRole,
+  assertNotSelfMutation,
+  isClientAccessNarrowing,
+  isMembershipAdministrationError,
+  MembershipAdministrationError,
+  normalizeClientAccessForRole,
+  type AgencyAdminInvariantInput,
+  type ClientAccessState,
+  type MembershipAdministrationFailure,
+} from './membership-administration.js';
+
 export { isPermission, PERMISSIONS, type Permission } from './permissions.js';
 
 export { can, PERMISSION_REGISTRY_VERSION, permissionsForRole } from './registry.js';

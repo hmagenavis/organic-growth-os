@@ -94,6 +94,40 @@ API boundary AND at the execution engine for write actions):
   scope — is an identical 404, so an authorization boundary cannot be used to
   enumerate resources.
 
+- **Member administration** (sub-phase 0.4.2A). `agency_admin` only; every other role
+  holds no `member.*` permission. Four mutations exist — attach, role change, client
+  scope replacement, removal — and each of them:
+  - refuses any mutation aimed at the caller's own membership (no self-escalation, no
+    self-demotion, no self-removal; a deliberate "leave organization" flow is later);
+  - preserves the invariant that an organization never commits a state with zero
+    `agency_admin` memberships, enforced under `SELECT … FOR UPDATE` over every admin
+    row of the organization in `id` order, not by a check-then-act count;
+  - never widens client access implicitly. A role change to `client_viewer` while the
+    membership holds `all_clients` is normalised **to `scoped` with zero clients**, and
+    granting a client requires the acting administrator to be able to read it.
+  - attaches existing accounts only. An address with no account is answered
+    `INVITATION_FLOW_NOT_IMPLEMENTED`; **no default password is ever generated and no
+    credential is ever emailed.**
+- **Session invalidation on membership change** (ADR-0017). Removal, role change and
+  any narrowing of client access revoke **every** server-side session of the affected
+  user. Broadening does not, because authorization is re-proven per request and nothing
+  permitted stops being permitted. The membership mutation, the revocation and the
+  audit record commit in **one transaction**, so "membership changed but sessions
+  stayed live" is not a reachable state. Administrative action on another member uses
+  server-side revocation, never cookie rotation.
+- **Tenant audit for administrative mutations.** `membership.created`,
+  `membership.role_changed`, `membership.scope_changed` and `membership.removed` are
+  written inside the authorized tenant transaction, carrying the actor's user id and
+  membership id from the *context* rather than from arguments. `before`/`after` hold
+  ids and policy values only — no email, no name, and no credential, token or
+  platform flag. `audit_logs` remains append-only by privilege.
+- **Organization provisioning is not an API** (ADR-0018). Creating an organization, a
+  user or the first `agency_admin` membership requires the provisioning role, which the
+  request-serving process never connects with. The whole surface is the operator
+  command `pnpm provision:organization`: atomic, idempotent on the organization slug,
+  and it prompts for any new administrator's password with the echo off rather than
+  accepting it as an argument or an environment variable.
+
 **Platform administration (separate from org RBAC):** `users.is_platform_admin`
 (Phase-0 design). Not an organization role; grants access only to a dedicated
 platform-admin route group (ops dashboards, queue dashboards, deletion-request

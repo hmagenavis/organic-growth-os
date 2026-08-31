@@ -1,9 +1,10 @@
 import { randomUUID } from 'node:crypto';
 
-import type { AuthorizationService } from '@organic-os/database';
+import type { AuthorizationService, MemberAdministrationService } from '@organic-os/database';
 import type { Logger } from '@organic-os/observability';
 import Fastify, { type FastifyInstance } from 'fastify';
 
+import { registerAdministrationRoutes } from './administration/routes.js';
 import type { AuthDependencies } from './auth/context.js';
 import { registerAuthPlugin } from './auth/plugin.js';
 import { registerAuthRoutes } from './auth/routes.js';
@@ -28,6 +29,15 @@ export interface BuildAppOptions {
    * registered together or not at all.
    */
   authorization?: AuthorizationService;
+  /**
+   * Member administration wiring. Requires `auth` and `authorization`, and is
+   * separate from them because it is a *larger* grant: these routes mutate
+   * memberships and end other people's sessions.
+   *
+   * A deployment that omits it serves no member-administration route at all rather
+   * than an unguarded one — the same fail-closed shape as omitting `auth`.
+   */
+  memberAdministration?: MemberAdministrationService;
 }
 
 /**
@@ -38,7 +48,14 @@ export interface BuildAppOptions {
  * (docs/ADR/0013, docs/SECURITY.md §8).
  */
 export function buildApp(options: BuildAppOptions): FastifyInstance {
-  const { logger, serviceVersion, startedAt = Date.now(), auth, authorization } = options;
+  const {
+    logger,
+    serviceVersion,
+    startedAt = Date.now(),
+    auth,
+    authorization,
+    memberAdministration,
+  } = options;
 
   const app = Fastify({
     // Request logging is emitted explicitly below so the logged fields stay controlled
@@ -80,6 +97,10 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
 
     if (authorization !== undefined) {
       registerAuthorizationRoutes(app, { service: authorization, logger });
+
+      if (memberAdministration !== undefined) {
+        registerAdministrationRoutes(app, { members: memberAdministration, logger });
+      }
     }
   }
 

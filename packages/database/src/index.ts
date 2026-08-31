@@ -39,6 +39,7 @@ export type {
   MembershipClientScopeRepository,
   MembershipRecord,
   MembershipRepository,
+  MembershipWithUser,
   OrganizationRecord,
   OrganizationRepository,
   SiteRecord,
@@ -66,6 +67,25 @@ export {
   type AuthorizedOrganizationSession,
 } from './authorization/with-authorized-organization.js';
 
+/**
+ * Member administration (Phase 0.4.2A). The policy it enforces lives in
+ * `@organic-os/authorization`; what is here is the transaction that locks the rows,
+ * writes the change, revokes the affected sessions and appends the audit record —
+ * all of it as one commit (ADR-0017).
+ */
+export {
+  createMemberAdministrationService,
+  type AddMemberInput,
+  type AdministrationRequest,
+  type ChangeMemberRoleInput,
+  type ClientAccessRequest,
+  type MemberAdministrationService,
+  type MemberAdministrationServiceOptions,
+  type MemberView,
+  type RemoveMemberInput,
+  type ReplaceMemberScopesInput,
+} from './administration/membership-administration.js';
+
 export type {
   AuditActorKind,
   AuditResult,
@@ -82,9 +102,16 @@ export type {
 /** Privileged tenant provisioning. Requires the provisioning role, not the runtime role. */
 export {
   findOrganizationBySlug,
+  isProvisioningError,
+  provisionFirstOrganization,
   provisionMembership,
   provisionOrganization,
   provisionUser,
+  ProvisioningError,
+  type FirstAdministratorInput,
+  type ProvisionFirstOrganizationInput,
+  type ProvisionFirstOrganizationResult,
+  type ProvisioningFailure,
   type ProvisionMembershipInput,
   type ProvisionOrganizationInput,
   type ProvisionUserInput,

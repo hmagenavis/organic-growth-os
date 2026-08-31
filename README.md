@@ -73,6 +73,15 @@ Database and maintenance commands:
 | `pnpm test:integration` | Vitest against real PostgreSQL (needs Docker)     |
 | `pnpm sessions:cleanup` | Delete finished sessions past the grace window    |
 
+Tenant provisioning is an operator command, never an API (ADR-0018). It needs
+`DATABASE_PROVISIONER_URL` and prompts for any new administrator's password with the
+echo off — a password is never accepted as an argument. Rerunning with the same slug
+creates nothing.
+
+```bash
+pnpm provision:organization --name "Acme Agency" --slug acme --email ada@acme.test
+```
+
 A single package can be targeted with `pnpm --filter @organic-os/api <script>`.
 
 Local defaults: web on `http://localhost:3000`, api on `http://127.0.0.1:3001`

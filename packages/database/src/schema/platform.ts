@@ -24,6 +24,12 @@ export const auditLogs = pgTable('audit_logs', {
   organizationId: uuid('organization_id').notNull(),
   actorKind: text('actor_kind').$type<AuditActorKind>().notNull(),
   actorId: text('actor_id'),
+  /**
+   * The membership the actor acted through (migration 0005). Null for workers, for
+   * system actors, and for any writer that holds no membership. Not derivable after
+   * the fact: a membership can be removed and re-created for the same pair.
+   */
+  actorMembershipId: uuid('actor_membership_id'),
   action: text('action').notNull(),
   targetType: text('target_type').notNull(),
   targetId: text('target_id'),

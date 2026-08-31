@@ -1,8 +1,10 @@
 # PHASE-0.md — Foundation
 
-Status: IN PROGRESS — §0.1, §0.2, the authentication half of §0.3, and the
-authorization core (§0.4.1) complete and verified (2026-08-31, see
-PHASE-0.1/0.2/0.3/0.4.1-IMPLEMENTATION.md); §0.4.2 onwards and §0.5–§0.6 not started
+Status: IN PROGRESS — §0.1, §0.2, the authentication half of §0.3 and the
+authorization core (§0.4.1) complete and verified; the member-administration half of
+§0.4.2 (§0.4.2A) code complete with its PostgreSQL gates unrun (2026-08-31, see
+PHASE-0.1/0.2/0.3/0.4.1/0.4.2A-IMPLEMENTATION.md); §0.4.2B onwards and §0.5–§0.6 not
+started
 PRD source: §165
 Duration estimate: 2–3 weeks of focused work
 Exit gate: BUILD → TEST → REVIEW → SECURITY → COST REVIEW (PRD §0)
@@ -69,12 +71,23 @@ authentication event has no organization at the moment it happens.
   `audit_logs` is written only under a proven organization. No organization id is
   invented.
 
-### 0.4.2 Member & tenant administration — NOT STARTED
-- Member mutation API (invite/create, role change, scope change, removal) with session
-  revocation/rotation on security-sensitive changes.
-- Clients and sites CRUD APIs behind the registry's existing write permissions.
-- Audit log writes for admin mutations.
-- Organization provisioning / first-admin workflow.
+### 0.4.2A Member administration, session invalidation, tenant audit, provisioning — CODE COMPLETE, INTEGRATION GATES UNRUN
+- Member mutation API (attach, role change, client-scope replacement, removal), all
+  `agency_admin` only, with self-mutation and last-admin protections.
+- Security-sensitive membership changes revoke every server-side session of the
+  affected member, in the **same transaction** as the mutation (ADR-0017).
+- Real tenant audit rows for every administrative mutation, append-only.
+- Atomic, idempotent first-organization provisioning through an operator command; no
+  HTTP surface, no public sign-up (ADR-0018).
+- Static gates pass; the PostgreSQL integration suites are written but were not
+  executed — Docker Desktop on the development machine fails to start
+  (PHASE-0.4.2A-IMPLEMENTATION.md §15, §17).
+
+### 0.4.2B Clients, sites, invitations & audit read — NOT STARTED
+- Clients and sites CRUD APIs behind the registry's existing write permissions,
+  resolving the open `seo_manager` write-permission question.
+- Audit log read endpoint for administrators.
+- Invitation tokens and the credential onboarding flow that completes member creation.
 - Platform-admin route group.
 
 ### 0.4.3 API & web

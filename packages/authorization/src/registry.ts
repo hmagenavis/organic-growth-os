@@ -30,7 +30,17 @@ import { ORGANIZATION_ROLES, type OrganizationRole } from './roles.js';
  * `site.update` to every role except agency_admin, and denies `member.read` to every
  * role except agency_admin. Widening a permission later is a one-line change with a
  * test; discovering that seo_manager could silently create clients is an incident.
- * The open question is recorded in docs/phases/PHASE-0.4.1-IMPLEMENTATION.md.
+ *
+ * Sub-phase 0.4.2A closed one of the two open questions from
+ * docs/phases/PHASE-0.4.1-IMPLEMENTATION.md §4: **`member.read` stays agency_admin
+ * only**, because the member list is administrative data rather than a directory, and
+ * every `member.*` mutation is agency_admin only alongside it. The other question —
+ * whether seo_manager should hold the `client.*` / `site.*` write permissions — is
+ * still open and belongs to 0.4.2B, the sub-phase that builds those endpoints.
+ *
+ * Note that 0.4.2A therefore changed no role's permissions, which is why
+ * `PERMISSION_REGISTRY_VERSION` is unchanged: bumping it would claim a change that
+ * did not happen.
  *
  * ## Versioning
  *

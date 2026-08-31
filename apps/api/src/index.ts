@@ -4,6 +4,7 @@ import {
   createAuthorizationService,
   createAuthStore,
   createDatabase,
+  createMemberAdministrationService,
   createMembershipStore,
   parseDatabaseEnv,
   runtimeDatabaseEnvSchema,
@@ -53,6 +54,14 @@ async function main(): Promise<void> {
     );
   }
 
+  // Authorization is per-request and uncached: the membership store is a thin
+  // wrapper over the same runtime pool, holding no state between requests, so a
+  // membership or role change takes effect on the next call (docs/SECURITY.md §3).
+  const authorization = createAuthorizationService({
+    db: database.db,
+    store: createMembershipStore(database.db),
+  });
+
   const app = buildApp({
     logger,
     serviceVersion: env.SERVICE_VERSION,
@@ -61,12 +70,15 @@ async function main(): Promise<void> {
       store: createAuthStore(database.db),
       config: authConfig,
     }),
-    // Authorization is per-request and uncached: the membership store is a thin
-    // wrapper over the same runtime pool, holding no state between requests, so a
-    // membership or role change takes effect on the next call (docs/SECURITY.md §3).
-    authorization: createAuthorizationService({
+    authorization,
+    // Member administration runs on the same runtime pool and the same authorized
+    // transaction. It is still the runtime role: it can mutate memberships of an
+    // organization the caller administers and revoke sessions, and it cannot create
+    // an organization or a user — those need the provisioning role, which this
+    // process never opens a connection with (docs/SECURITY.md §5).
+    memberAdministration: createMemberAdministrationService({
+      authorization,
       db: database.db,
-      store: createMembershipStore(database.db),
     }),
   });
 

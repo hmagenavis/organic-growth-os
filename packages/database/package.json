@@ -29,7 +29,8 @@
     "db:bootstrap": "tsx src/cli/bootstrap.ts",
     "db:migrate": "tsx src/cli/migrate.ts",
     "db:status": "tsx src/cli/status.ts",
-    "db:reset": "tsx src/cli/reset.ts"
+    "db:reset": "tsx src/cli/reset.ts",
+    "provision:organization": "tsx src/cli/provision-organization.ts"
   },
   "dependencies": {
     "@organic-os/auth": "workspace:*",

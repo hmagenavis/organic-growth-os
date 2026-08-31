@@ -351,9 +351,18 @@ cost_budgets    id, organization_id, client_id NULL, site_id NULL,
                 limit_usd numeric, hard_stop bool, alert_threshold numeric,
                 current_spend cached via rollup, updated_at
 audit_logs      id, organization_id, actor (user_id|'system'|'worker:<queue>'),
+                actor_membership_id uuid NULL,   -- membership the actor acted through
                 action text, target_type, target_id, before jsonb NULL, after jsonb NULL,
                 source (ui|api|worker|wp_plugin), ip inet NULL, result (ok|denied|error),
                 created_at    -- append-only; no UPDATE/DELETE grants
+                -- actor_membership_id (migration 0005) is NULL for workers, system
+                -- actors and any writer holding no membership. It carries NO foreign
+                -- key, for the same reason organization_id does not: audit records
+                -- outlive the rows they describe, and a cascade from memberships would
+                -- delete the record of a removal along with the membership it
+                -- recorded. It is written from the tenant context, never from a
+                -- repository argument, so an entry cannot be attributed to a
+                -- membership the caller was not acting through.
 api_quota_usage id, provider, organization_id NULL, window_start, requests int,
                 quota_limit int, throttled_count int
 ```

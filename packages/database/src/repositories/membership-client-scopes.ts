@@ -16,7 +16,20 @@ export interface AddMembershipClientScopeInput {
 export interface MembershipClientScopeRepository {
   add(input: AddMembershipClientScopeInput): Promise<MembershipClientScopeRecord>;
   listByMembership(membershipId: string): Promise<MembershipClientScopeRecord[]>;
+  /** Every scope row of the organization, so a member list is one query, not N. */
+  listForOrganization(): Promise<MembershipClientScopeRecord[]>;
   remove(membershipId: string, clientId: string): Promise<boolean>;
+  /**
+   * Removes every scope row of one membership.
+   *
+   * The first half of a scope *replacement*: `PUT` semantics mean the request states
+   * the complete resulting access, so the previous rows go and the submitted ones
+   * arrive, both inside the caller's transaction. There is no window in which the
+   * membership holds a partially-applied scope.
+   *
+   * @returns the number of rows removed.
+   */
+  deleteAllForMembership(membershipId: string): Promise<number>;
 }
 
 /**
@@ -54,6 +67,23 @@ export function createMembershipClientScopeRepository(
         .from(membershipClientScopes)
         .where(and(eq(membershipClientScopes.membershipId, membershipId), scoped))
         .orderBy(asc(membershipClientScopes.createdAt));
+    },
+
+    async listForOrganization(): Promise<MembershipClientScopeRecord[]> {
+      return tx
+        .select()
+        .from(membershipClientScopes)
+        .where(scoped)
+        .orderBy(asc(membershipClientScopes.membershipId), asc(membershipClientScopes.createdAt));
+    },
+
+    async deleteAllForMembership(membershipId: string): Promise<number> {
+      const rows = await tx
+        .delete(membershipClientScopes)
+        .where(and(eq(membershipClientScopes.membershipId, membershipId), scoped))
+        .returning({ id: membershipClientScopes.id });
+
+      return rows.length;
     },
 
     async remove(membershipId: string, clientId: string): Promise<boolean> {

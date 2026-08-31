@@ -14,9 +14,11 @@ import {
 import { z } from 'zod';
 
 import type { Database } from '../client.js';
+import type { MembershipRecord } from '../repositories/memberships.js';
 import { createTenantRepositories, type TenantRepositories } from '../repositories/index.js';
 import type { TenantContext } from '../tenant/context.js';
 import { runWithTenantContext } from '../tenant/transaction.js';
+import { revokeAllSessionsForUserInTransaction } from './session-revocation.js';
 
 /**
  * The canonical way to do authorized tenant work.
@@ -82,6 +84,30 @@ export interface AuthorizedOrganizationSession {
    * `requireClient`.
    */
   listScopedClientIds(): Promise<ReadonlySet<string>>;
+
+  /**
+   * Revokes every live session of the user behind `membership`, **in this
+   * transaction**.
+   *
+   * This is what makes a security-sensitive membership change atomic: the mutation
+   * and the logout it forces are one commit, so the dangerous middle state — the
+   * membership changed but the old sessions survived — cannot exist (ADR-0017,
+   * `session-revocation.ts`).
+   *
+   * The argument is a membership *record*, not a user id, and it is re-checked
+   * against the authorized organization here. A membership record can only come from
+   * `repositories.memberships`, which is bound to this organization and additionally
+   * constrained by Row Level Security, so an administrator of organization A has no
+   * way to reach this method with a member of organization B.
+   *
+   * `sessions` carries no organization column and no policy, so this is the one place
+   * the authorized-tenant session touches a row outside the tenant boundary. It is
+   * exposed as a single narrow method rather than as a raw transaction handle for
+   * exactly that reason.
+   *
+   * @returns how many live sessions were revoked.
+   */
+  revokeMemberSessions(membership: MembershipRecord): Promise<number>;
 }
 
 export interface AuthorizationServiceOptions {
@@ -113,6 +139,7 @@ export function createAuthorizationService(
 ): AuthorizationService {
   const { db, store } = options;
   const authorizeOptions = options.now === undefined ? {} : { now: options.now };
+  const now = options.now ?? ((): Date => new Date());
 
   return {
     async listOrganizations(
@@ -138,7 +165,14 @@ export function createAuthorizationService(
       // is not read again from here on.
       const tenant: TenantContext = {
         organizationId: context.organizationId,
-        actor: { kind: 'user', userId: context.userId },
+        actor: {
+          kind: 'user',
+          userId: context.userId,
+          // Recorded on audit entries. It comes from the proven membership, so an
+          // entry cannot be attributed to a membership the caller was not acting
+          // through (migration 0005).
+          membershipId: context.membershipId,
+        },
       };
 
       // Steps 3–5.
@@ -210,6 +244,19 @@ export function createAuthorizationService(
             }
 
             return withAuthorizedClient(context, clientId);
+          },
+
+          async revokeMemberSessions(membership: MembershipRecord): Promise<number> {
+            // Defence in depth. The record already came from a tenant-scoped
+            // repository, so this can only fail if a future caller constructs one by
+            // hand — which is precisely the mistake worth failing loudly on.
+            if (membership.organizationId !== context.organizationId) {
+              throw new AuthorizationError('resource_not_in_organization', {
+                resource: 'membership',
+              });
+            }
+
+            return revokeAllSessionsForUserInTransaction(tx, membership.userId, now());
           },
         };
 
