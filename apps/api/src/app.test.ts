@@ -2,6 +2,7 @@ import {
   PROBLEM_CONTENT_TYPE,
   healthResponseSchema,
   problemDetailsSchema,
+  readinessResponseSchema,
 } from '@organic-os/contracts';
 import { createLogger } from '@organic-os/observability';
 import type { FastifyInstance } from 'fastify';
@@ -11,11 +12,12 @@ import { buildApp } from './app.js';
 
 let app: FastifyInstance | undefined;
 
-function createApp(startedAt = Date.now()): FastifyInstance {
+function createApp(startedAt = Date.now(), checkReady?: () => Promise<boolean>): FastifyInstance {
   app = buildApp({
     logger: createLogger({ name: 'api-test', level: 'silent' }),
     serviceVersion: '1.2.3-test',
     startedAt,
+    ...(checkReady === undefined ? {} : { checkReady }),
   });
   return app;
 }
@@ -86,5 +88,78 @@ describe('error handling', () => {
     const problem = problemDetailsSchema.parse(response.json());
     expect(problem.requestId).toBeTypeOf('string');
     expect(problem.requestId?.length).toBeGreaterThan(0);
+  });
+});
+
+describe('GET /health/ready', () => {
+  it('is ready when no dependency is configured', async () => {
+    const response = await createApp().inject({ method: 'GET', url: '/health/ready' });
+
+    expect(response.statusCode).toBe(200);
+    expect(readinessResponseSchema.parse(response.json())).toMatchObject({
+      status: 'ready',
+      service: 'api',
+      version: '1.2.3-test',
+    });
+  });
+
+  it('is ready when the dependency probe succeeds', async () => {
+    const response = await createApp(Date.now(), () => Promise.resolve(true)).inject({
+      method: 'GET',
+      url: '/health/ready',
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(readinessResponseSchema.parse(response.json()).status).toBe('ready');
+  });
+
+  it('answers 503 when the dependency probe fails', async () => {
+    // 503 rather than 500: the process is fine, it just must not receive traffic.
+    const response = await createApp(Date.now(), () => Promise.resolve(false)).inject({
+      method: 'GET',
+      url: '/health/ready',
+    });
+
+    expect(response.statusCode).toBe(503);
+    expect(readinessResponseSchema.parse(response.json()).status).toBe('not_ready');
+  });
+
+  it('never reveals which dependency failed or why', async () => {
+    const response = await createApp(Date.now(), () => Promise.resolve(false)).inject({
+      method: 'GET',
+      url: '/health/ready',
+    });
+
+    const body = response.body.toLowerCase();
+    for (const forbidden of [
+      'database',
+      'postgres',
+      'connection',
+      'password',
+      'host',
+      'econnrefused',
+    ]) {
+      expect(body).not.toContain(forbidden);
+    }
+
+    expect(Object.keys(readinessResponseSchema.parse(response.json())).sort()).toEqual(
+      ['service', 'status', 'version'].sort(),
+    );
+  });
+
+  it('is liveness-independent: /health stays 200 while readiness is 503', async () => {
+    const instance = createApp(Date.now(), () => Promise.resolve(false));
+
+    const live = await instance.inject({ method: 'GET', url: '/health' });
+    const ready = await instance.inject({ method: 'GET', url: '/health/ready' });
+
+    expect(live.statusCode).toBe(200);
+    expect(ready.statusCode).toBe(503);
+  });
+
+  it('is not cacheable', async () => {
+    const response = await createApp().inject({ method: 'GET', url: '/health/ready' });
+
+    expect(response.headers['cache-control']).toBe('no-store');
   });
 });

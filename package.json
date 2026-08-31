@@ -20,6 +20,7 @@
     "db:status": "pnpm --filter @organic-os/database db:status",
     "db:reset": "pnpm --filter @organic-os/database db:reset",
     "provision:organization": "pnpm --filter @organic-os/database provision:organization --",
+    "db:verify:staging": "pnpm --filter @organic-os/database db:verify:staging",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "sessions:cleanup": "pnpm --filter @organic-os/worker sessions:cleanup"

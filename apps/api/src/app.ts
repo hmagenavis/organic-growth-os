@@ -38,6 +38,11 @@ export interface BuildAppOptions {
    * than an unguarded one — the same fail-closed shape as omitting `auth`.
    */
   memberAdministration?: MemberAdministrationService;
+  /**
+   * Dependency probe backing `GET /health/ready`. Absent means the deployment has no
+   * dependency to be ready for, and readiness reduces to liveness.
+   */
+  checkReady?: () => Promise<boolean>;
 }
 
 /**
@@ -55,6 +60,7 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
     auth,
     authorization,
     memberAdministration,
+    checkReady,
   } = options;
 
   const app = Fastify({
@@ -89,7 +95,12 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
   });
 
   registerErrorHandlers(app, logger);
-  registerHealthRoute(app, { serviceVersion, startedAt });
+  registerHealthRoute(app, {
+    serviceVersion,
+    startedAt,
+    logger,
+    ...(checkReady === undefined ? {} : { checkReady }),
+  });
 
   if (auth !== undefined) {
     registerAuthPlugin(app, { deps: auth, logger });

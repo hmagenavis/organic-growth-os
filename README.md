@@ -64,14 +64,15 @@ Run from the repository root; Turborepo fans each task out across the workspace.
 
 Database and maintenance commands:
 
-| Command                 | Purpose                                           |
-| ----------------------- | ------------------------------------------------- |
-| `pnpm db:bootstrap`     | Create extensions and roles (superuser; once)     |
-| `pnpm db:migrate`       | Apply pending migrations                          |
-| `pnpm db:status`        | Report migration state (exit 2 when pending)      |
-| `pnpm db:reset`         | Drop and rebuild — refuses anything but localhost |
-| `pnpm test:integration` | Vitest against real PostgreSQL (needs Docker)     |
-| `pnpm sessions:cleanup` | Delete finished sessions past the grace window    |
+| Command                  | Purpose                                           |
+| ------------------------ | ------------------------------------------------- |
+| `pnpm db:bootstrap`      | Create extensions and roles (superuser; once)     |
+| `pnpm db:migrate`        | Apply pending migrations                          |
+| `pnpm db:status`         | Report migration state (exit 2 when pending)      |
+| `pnpm db:reset`          | Drop and rebuild — refuses anything but localhost |
+| `pnpm test:integration`  | Vitest against real PostgreSQL (needs Docker)     |
+| `pnpm db:verify:staging` | Verify a managed staging database (read-only)     |
+| `pnpm sessions:cleanup`  | Delete finished sessions past the grace window    |
 
 Tenant provisioning is an operator command, never an API (ADR-0018). It needs
 `DATABASE_PROVISIONER_URL` and prompts for any new administrator's password with the
@@ -83,6 +84,27 @@ pnpm provision:organization --name "Acme Agency" --slug acme --email ada@acme.te
 ```
 
 A single package can be targeted with `pnpm --filter @organic-os/api <script>`.
+
+## Cloud / staging
+
+Local Docker is a convenience, not a requirement: **GitHub Actions is the authoritative
+verifier.** Every push runs the full suite against a disposable PostgreSQL created,
+migrated and destroyed inside the runner, so a machine that cannot start Docker can
+still get a definitive answer by pushing a branch.
+
+Managed staging (Supabase) is a deployment target, never a substitute for that:
+
+```bash
+pnpm db:verify:staging   # read-only + rolled-back checks against a staging database
+```
+
+It refuses to run unless `STAGING_DB_HOST` matches the host inside every connection
+string it is given, so it cannot be aimed at a database nobody meant to touch. Schema
+changes reach staging only through the manual `staging-database` GitHub Actions
+workflow — never from a web request, a push or a preview deployment.
+
+See `docs/cloud/` for the architecture, the Supabase and Vercel setup, and the full
+environment-variable matrix.
 
 Local defaults: web on `http://localhost:3000`, api on `http://127.0.0.1:3001`
 (`GET /health`).

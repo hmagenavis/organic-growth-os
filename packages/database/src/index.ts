@@ -159,6 +159,23 @@ export {
   type RuntimeDatabaseEnv,
 } from './config.js';
 
+/**
+ * Managed-environment verification (Cloud Foundation 0.1). Read-only and
+ * rolled-back checks that the platform really provides the privileges, extensions and
+ * transaction semantics the architecture assumes. Never a substitute for the
+ * disposable CI suite (docs/cloud/SUPABASE-STAGING.md).
+ */
+export {
+  StagingTargetError,
+  verifyStagingEnvironment,
+  type CheckStatus,
+  type StagingCheck,
+  type StagingVerificationInput,
+  type StagingVerificationResult,
+} from './staging/verify.js';
+
+export { checkDatabaseReady } from './readiness.js';
+
 export { newId } from './ids.js';
 
 /**

@@ -1,0 +1,86 @@
+name: Staging database
+
+# Manual only, and deliberately so.
+#
+# Nothing that can migrate the shared staging schema may be reachable from a push, a
+# pull request or a preview deployment. If this workflow had a `pull_request` trigger,
+# every contributor's branch would be able to reshape the database every other
+# environment reads (Cloud Foundation 0.1, STEP 15/16).
+#
+# The migration credential lives in the `staging` GitHub Environment, not in
+# repository secrets, so it can carry required reviewers and a branch restriction. The
+# serving application never receives it: Vercel gets the runtime connection only
+# (docs/cloud/ENVIRONMENT-MATRIX.md).
+on:
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: 'Apply pending migrations. Leave unchecked for a read-only report.'
+        type: boolean
+        default: false
+
+concurrency:
+  # Two migrators against one database is the one thing the advisory lock in the
+  # runner exists to survive; not starting the second run is better still.
+  group: staging-database
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  staging:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: staging
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Build workspace packages
+        run: pnpm build
+
+      # Reports which migrations are pending. Exits 2 when there are any, which is
+      # information rather than failure for a read-only run.
+      - name: Report migration state
+        continue-on-error: true
+        env:
+          DATABASE_MIGRATOR_URL: ${{ secrets.STAGING_DATABASE_MIGRATOR_URL }}
+        run: pnpm db:status
+
+      - name: Apply pending migrations
+        if: ${{ inputs.apply }}
+        env:
+          DATABASE_MIGRATOR_URL: ${{ secrets.STAGING_DATABASE_MIGRATOR_URL }}
+        run: pnpm db:migrate
+
+      - name: Confirm no migration is left pending
+        if: ${{ inputs.apply }}
+        env:
+          DATABASE_MIGRATOR_URL: ${{ secrets.STAGING_DATABASE_MIGRATOR_URL }}
+        run: pnpm db:status
+
+      # Environment verification, not logic verification. It proves the managed
+      # platform really gave us the privileges, extensions, FORCE RLS and
+      # transaction-local tenant semantics the architecture assumes — the things a
+      # disposable container cannot tell us. Every check is a catalog read or runs in a
+      # rolled-back transaction; nothing is seeded or deleted.
+      #
+      # STAGING_DB_HOST must match the host inside every connection string, so a stale
+      # secret cannot point this at a database nobody meant to touch.
+      - name: Verify staging environment
+        env:
+          STAGING_DB_HOST: ${{ vars.STAGING_DB_HOST }}
+          STAGING_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+          STAGING_DATABASE_MIGRATOR_URL: ${{ secrets.STAGING_DATABASE_MIGRATOR_URL }}
+        run: pnpm db:verify:staging

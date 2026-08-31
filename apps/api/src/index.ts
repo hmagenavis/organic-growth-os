@@ -1,6 +1,7 @@
 import { createAuthConfig } from '@organic-os/auth';
 import { serverEnv } from '@organic-os/config/server';
 import {
+  checkDatabaseReady,
   createAuthorizationService,
   createAuthStore,
   createDatabase,
@@ -80,6 +81,9 @@ async function main(): Promise<void> {
       authorization,
       db: database.db,
     }),
+    // Readiness, not liveness: a database outage must stop traffic being routed here
+    // without the platform restarting a process that is otherwise fine.
+    checkReady: () => checkDatabaseReady(database.db),
   });
 
   const shutdown = (signal: NodeJS.Signals): void => {

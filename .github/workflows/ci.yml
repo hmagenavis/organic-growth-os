@@ -1,9 +1,17 @@
 name: CI
 
+# The authoritative security verifier, and it touches no cloud environment: the
+# database it tests is created, migrated and destroyed inside the runner. Supabase
+# staging is a deployment target, never a substitute for this
+# (docs/cloud/CLOUD-ARCHITECTURE.md). Nothing here holds a staging credential; the
+# workflow that does is manual-dispatch only (staging-database.yml).
+
 on:
   push:
     branches: [main]
   pull_request:
+  # Manual re-run, so a verification result can be refreshed without an empty commit.
+  workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.ref }}
