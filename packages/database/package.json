@@ -32,6 +32,7 @@
     "db:reset": "tsx src/cli/reset.ts"
   },
   "dependencies": {
+    "@organic-os/auth": "workspace:*",
     "@organic-os/observability": "workspace:*",
     "drizzle-orm": "^0.45.2",
     "pg": "^8.23.0",

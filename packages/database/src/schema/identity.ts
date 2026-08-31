@@ -52,8 +52,14 @@ export const membershipClientScopes = pgTable('membership_client_scopes', {
 export const sessions = pgTable('sessions', {
   id: uuid('id').primaryKey(),
   userId: uuid('user_id').notNull(),
+  /** SHA-256 of the opaque token. The token itself is never stored (ADR-0013). */
   tokenHash: bytea('token_hash').notNull(),
+  /** Absolute expiry, fixed at creation. */
   expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  /** Drives the idle timeout; written at most once per touch interval (0.3). */
+  lastUsedAt: timestamp('last_used_at', { withTimezone: true }).notNull().defaultNow(),
+  /** Set on logout, rotation, idle expiry or administrative revocation (0.3). */
+  revokedAt: timestamp('revoked_at', { withTimezone: true }),
   ip: inet('ip'),
   userAgent: text('user_agent'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),

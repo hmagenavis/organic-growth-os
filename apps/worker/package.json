@@ -9,10 +9,13 @@
     "start": "node dist/index.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint src",
-    "test": "vitest run"
+    "test": "vitest run",
+    "sessions:cleanup": "tsx src/cli/session-cleanup.ts"
   },
   "dependencies": {
+    "@organic-os/auth": "workspace:*",
     "@organic-os/config": "workspace:*",
+    "@organic-os/database": "workspace:*",
     "@organic-os/observability": "workspace:*"
   },
   "devDependencies": {

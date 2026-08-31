@@ -1,7 +1,8 @@
 # PHASE-0.md — Foundation
 
-Status: IN PROGRESS — §0.1 and §0.2 complete and verified (2026-08-31, see
-PHASE-0.1-IMPLEMENTATION.md and PHASE-0.2-IMPLEMENTATION.md); §0.3–§0.6 not started
+Status: IN PROGRESS — §0.1, §0.2 and the authentication half of §0.3 complete and
+verified (2026-08-31, see PHASE-0.1/0.2/0.3-IMPLEMENTATION.md); RBAC (the other half of
+§0.3) and §0.4–§0.6 not started
 PRD source: §165
 Duration estimate: 2–3 weeks of focused work
 Exit gate: BUILD → TEST → REVIEW → SECURITY → COST REVIEW (PRD §0)
@@ -39,8 +40,18 @@ is production-grade — no placeholders (PRD §0).
   context via `SET LOCAL` only (pool-safety probe in CI, TESTING.md §2).
 
 ### 0.3 Auth & RBAC
+Split in two, because they answer different questions and the boundary between them is
+load-bearing: authentication asks *who is this*, authorization asks *what may they do*.
+
+**0.3a Authentication — COMPLETE.**
 - Email/password (argon2id), server-side sessions, secure cookies, CSRF protection,
-  login rate limiting per SECURITY.md §2.
+  login rate limiting per SECURITY.md §2. Session rotation, revocation and cleanup.
+- A valid session establishes identity only: it sets no tenant context and grants no
+  organization access. Held in place by a test (PHASE-0.3-IMPLEMENTATION.md §11).
+
+**0.3b RBAC — moved to 0.4**, where it joins the tenant-context selection it depends
+on. Audit-log rows for auth events move with it: `audit_logs` is tenant-scoped and an
+authentication event has no organization at the moment it happens.
 - RBAC matrix as data + authorization module; deny by default; org roles only
   (agency_admin, seo_manager, content_editor, analyst, client_viewer) with
   normalized `membership_client_scopes` restriction.

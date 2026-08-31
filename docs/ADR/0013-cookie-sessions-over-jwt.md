@@ -23,3 +23,15 @@ revocation (logout, admin force-logout, integration-revocation cascades).
 - Every request costs a session lookup (cached in Redis with short TTL if it ever
   shows up in p95).
 - A future public API gets separate API keys — a different mechanism by design.
+
+## Implementation notes (sub-phase 0.3)
+- Cookie name is `__Host-organic-os-session` (the planning draft said `ogos_session`;
+  `ogos` appears nowhere else in the project). Local HTTP development uses a
+  separately named, non-`__Host-` cookie so nothing about making localhost work can
+  weaken the production profile.
+- The CSRF double-submit token is **signed** (HMAC over binding + nonce), not a bare
+  random value: an unsigned double-submit does not survive cookie injection from a
+  sibling subdomain. The binding is the session id, or `anonymous` before login.
+- Idle 2 h / absolute 12 h by default, both configurable; enforced on every
+  resolution, with the absolute cap in SQL and the idle cap in the session service.
+- See `docs/phases/PHASE-0.3-IMPLEMENTATION.md`.

@@ -1,3 +1,13 @@
+export {
+  csrfTokenResponseSchema,
+  currentUserSchema,
+  loginRequestSchema,
+  loginResponseSchema,
+  type CsrfTokenResponse,
+  type CurrentUser,
+  type LoginRequestBody,
+  type LoginResponse,
+} from './auth.js';
 export { healthResponseSchema, type HealthResponse } from './health.js';
 export {
   problemDetailsSchema,

@@ -85,6 +85,30 @@ describe('createLogger', () => {
     expect(sink.raw()).not.toContain(SECRET);
   });
 
+  it('redacts every authentication secret introduced in sub-phase 0.3', () => {
+    const sink = capture();
+
+    build(sink).info(
+      {
+        password: SECRET,
+        currentPassword: SECRET,
+        newPassword: SECRET,
+        confirmPassword: SECRET,
+        passwordHash: SECRET,
+        sessionToken: SECRET,
+        tokenHash: SECRET,
+        csrfToken: SECRET,
+        sessionSecret: SECRET,
+        cookies: { session: SECRET },
+        headers: { cookie: SECRET, authorization: SECRET, 'set-cookie': SECRET },
+        attempt: { password: SECRET, csrfToken: SECRET, sessionToken: SECRET },
+      },
+      'authentication attempt',
+    );
+
+    expect(sink.raw()).not.toContain(SECRET);
+  });
+
   it('keeps redaction on child loggers', () => {
     const sink = capture();
     const child = build(sink).child({ requestId: 'req-1' });

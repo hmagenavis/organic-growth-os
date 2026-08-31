@@ -24,14 +24,25 @@ session management.
 
 ## 2. Authentication & sessions
 
-- Email + password: **argon2id** (memory-hard params reviewed at Phase 0), constant-time
-  compare, generic error messages, per-IP + per-account rate limits with backoff.
-- Sessions: server-side rows (`sessions` table), opaque 256-bit token, stored hashed.
-  Cookie: `__Host-ogos_session`, `HttpOnly`, `Secure`, `SameSite=Lax`, no JS access.
-  Idle timeout + absolute lifetime; session rotation on login and privilege change;
-  logout revokes server-side.
-- CSRF: double-submit token bound to session for all mutating requests (SameSite is
-  defense-in-depth, not the only control).
+Implemented in sub-phase 0.3 — see `docs/phases/PHASE-0.3-IMPLEMENTATION.md` for the
+built architecture; this section is the requirement.
+
+- Email + password: **argon2id** (OWASP baseline m=19456 KiB, t=2, p=1, configurable),
+  library-provided constant-time verification, generic error messages, per-source +
+  per-account rate limits.
+- Sessions: server-side rows (`sessions` table), opaque 256-bit token, stored as a
+  SHA-256 hash. Cookie: `__Host-organic-os-session`, `HttpOnly`, `Secure`,
+  `SameSite=Lax`, `Path=/`, no `Domain`, no JS access. Local HTTP development uses a
+  separately named non-`__Host-` cookie; production fails closed if asked to serve
+  insecure cookies. Idle timeout (2 h) + absolute lifetime (12 h), both configurable;
+  session rotation on login and privilege change; logout revokes server-side.
+- CSRF: **signed** double-submit token bound to the session (or to `anonymous` before
+  login) for all mutating requests, login included. The signature is what defeats
+  cookie injection from a sibling subdomain; SameSite is defense-in-depth, not the
+  only control.
+- **Authentication is not authorization.** A valid session establishes identity only.
+  It never sets `app.current_org_id` and confers no access to any organization-scoped
+  table; that requires the separate authorization step in §3/§4.
 - MFA (TOTP) and SSO/OAuth login: designed-for (columns reserved) but post-MVP.
 - No JWTs for user sessions (revocability wins); short-lived signed tokens only for
   internal worker→API needs if they ever arise.
@@ -76,7 +87,10 @@ required before adding additional platform operators.
 - **Database layer:** RLS on every tenant-scoped table
   (`organization_id = current_setting('app.current_org_id', true)::uuid`).
   Tenant context is **transaction-local only**: `SET LOCAL app.current_org_id = ...`
-  (or `set_config(..., true)`) inside a transaction. Session-level `SET` is
+  (or `set_config(..., true)`) inside a transaction. Authentication uses its own,
+  separate transaction-local settings (`app.auth_email`, `app.auth_user_id`) that back
+  a point-lookup policy on `users`; no tenant policy consults them, so resolving an
+  identity grants no tenant access (sub-phase 0.3, migration 0003). Session-level `SET` is
   forbidden — with connection pooling, session state can leak across checkouts, so
   a lint rule + code review ban any non-LOCAL variant, and an integration test
   asserts a checked-back-in connection carries no tenant context. API/worker connect

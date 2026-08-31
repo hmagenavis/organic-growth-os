@@ -47,6 +47,14 @@ export interface ProvisionUserInput {
   name: string;
   locale?: string;
   /**
+   * Argon2id encoded hash produced by `@organic-os/auth`. A plaintext password never
+   * reaches this module, and the runtime role holds no privilege that could write
+   * this column (migration 0003), so setting a credential is a privileged operation
+   * by construction — which is exactly the boundary a future sign-up/invitation flow
+   * has to cross deliberately (docs/SECURITY.md §2).
+   */
+  passwordHash?: string;
+  /**
    * Platform administration. Deliberately settable only here — no organization role
    * and no tenant-scoped repository can grant it (docs/SECURITY.md §3).
    */
@@ -61,6 +69,7 @@ export async function provisionUser(db: Database, input: ProvisionUserInput): Pr
       email: input.email,
       name: input.name,
       ...(input.locale === undefined ? {} : { locale: input.locale }),
+      ...(input.passwordHash === undefined ? {} : { passwordHash: input.passwordHash }),
       ...(input.isPlatformAdmin === undefined ? {} : { isPlatformAdmin: input.isPlatformAdmin }),
     })
     .returning();

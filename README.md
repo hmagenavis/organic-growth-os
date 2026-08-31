@@ -8,9 +8,15 @@ Product and architecture documentation lives in [`docs/`](docs/):
 [EXECUTION-SAFETY](docs/EXECUTION-SAFETY.md) · [ADRs](docs/ADR/README.md) ·
 [phases](docs/phases/)
 
-**Current state: Phase 0.1 — repository and tooling foundation.** There is no database,
-authentication, queue, crawler or product functionality yet; those are built in later
-Phase 0 sub-phases. See [PHASE-0.1-IMPLEMENTATION](docs/phases/PHASE-0.1-IMPLEMENTATION.md).
+**Current state: Phase 0.3 — authentication.** The repository holds the monorepo and
+tooling ([0.1](docs/phases/PHASE-0.1-IMPLEMENTATION.md)), the multi-tenant database with
+Row Level Security ([0.2](docs/phases/PHASE-0.2-IMPLEMENTATION.md)), and email/password
+authentication with server-side sessions
+([0.3](docs/phases/PHASE-0.3-IMPLEMENTATION.md)).
+
+There is no _authorization_ yet: a valid session proves identity and nothing more — no
+RBAC, no organization access, no product endpoints. That, along with queues, the
+crawler and every SEO feature, arrives in later phases.
 
 ## Prerequisites
 
@@ -29,8 +35,18 @@ cp .env.example .env
 pnpm install
 ```
 
-Every variable in `.env.example` is optional and non-secret — the defaults in
-`packages/config` are used when a variable is unset. Never commit a real `.env`.
+Most variables in `.env.example` are optional and non-secret. Two groups are not:
+the database connection strings and `AUTH_SESSION_SECRET`. Their example values are
+labelled local-development-only and must never be reused anywhere else; real
+environments load them from a secret manager. Never commit a real `.env`.
+
+With Docker running, bring up PostgreSQL and apply the schema:
+
+```bash
+docker compose up -d
+pnpm db:bootstrap
+pnpm db:migrate
+```
 
 ## Scripts
 
@@ -45,6 +61,17 @@ Run from the repository root; Turborepo fans each task out across the workspace.
 | `pnpm test`         | Vitest suites                         |
 | `pnpm format`       | Apply Prettier (skips `docs/`)        |
 | `pnpm format:check` | Verify formatting — CI gate           |
+
+Database and maintenance commands:
+
+| Command                 | Purpose                                           |
+| ----------------------- | ------------------------------------------------- |
+| `pnpm db:bootstrap`     | Create extensions and roles (superuser; once)     |
+| `pnpm db:migrate`       | Apply pending migrations                          |
+| `pnpm db:status`        | Report migration state (exit 2 when pending)      |
+| `pnpm db:reset`         | Drop and rebuild — refuses anything but localhost |
+| `pnpm test:integration` | Vitest against real PostgreSQL (needs Docker)     |
+| `pnpm sessions:cleanup` | Delete finished sessions past the grace window    |
 
 A single package can be targeted with `pnpm --filter @organic-os/api <script>`.
 
@@ -61,12 +88,14 @@ apps/
 packages/
   contracts/     Shared Zod schemas and types
   config/        Environment validation; server/client split
+  database/      Schema, migrations, tenant-scoped repositories, RLS
+  auth/          Password hashing, sessions, cookies, CSRF, rate limiting
   observability/ Structured logging with redaction
 docs/            Product, architecture and phase documentation
 ```
 
 Packages are created in the phase that needs them, so the tree above grows over time
-(`database`, `auth`, `integrations`, `crawler-core`, … — see
+(`integrations`, `crawler-core`, `llm`, … — see
 [ARCHITECTURE §4](docs/ARCHITECTURE.md)). Empty placeholder packages are not created.
 
 **Dependency rule:** apps may depend on packages; packages never import from apps.

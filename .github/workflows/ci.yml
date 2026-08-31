@@ -41,8 +41,10 @@ jobs:
       - name: Test
         run: pnpm test
 
-      # Real PostgreSQL via Testcontainers: Row Level Security and tenant isolation
-      # are never verified against a substitute engine (docs/TESTING.md §2).
+      # Real PostgreSQL via Testcontainers: Row Level Security, tenant isolation and
+      # the authentication path are never verified against a substitute engine
+      # (docs/TESTING.md §2). Covers both the database package and the API's
+      # authentication endpoints.
       - name: Integration tests (PostgreSQL)
         run: pnpm test:integration
 

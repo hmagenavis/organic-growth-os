@@ -85,7 +85,11 @@ membership_client_scopes
                 UNIQUE(membership_id, client_id)
                 -- rows restrict the membership to listed clients;
                 -- no rows = access to all clients of the organization (role permitting)
-sessions        id, user_id, token_hash, expires_at, ip, user_agent, created_at
+sessions        id, user_id, token_hash (sha256 of the opaque token), expires_at,
+                last_used_at (idle timeout), revoked_at (logout/rotation/revocation),
+                ip, user_agent, created_at
+                -- not tenant-scoped: resolved by token hash before any organization
+                -- is known, so it carries no organization_id/client_id/site_id
 clients         id, organization_id, name, status, industry, notes, created_at, updated_at
 sites           id, organization_id, client_id, base_url, cms_type ('wordpress'),
                 status, timezone, language, crawl_budget jsonb, created_at, updated_at

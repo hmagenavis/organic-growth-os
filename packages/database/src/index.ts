@@ -118,3 +118,9 @@ export {
 } from './config.js';
 
 export { newId } from './ids.js';
+
+/**
+ * Authentication persistence. Implements the `AuthStore` port from
+ * `@organic-os/auth`; the security policy it serves lives there, not here.
+ */
+export { createAuthStore } from './auth/store.js';

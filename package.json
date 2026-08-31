@@ -14,13 +14,14 @@
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
-    "test:integration": "pnpm --filter @organic-os/database test:integration",
+    "test:integration": "pnpm --filter @organic-os/database test:integration && pnpm --filter @organic-os/api test:integration",
     "db:bootstrap": "pnpm --filter @organic-os/database db:bootstrap",
     "db:migrate": "pnpm --filter @organic-os/database db:migrate",
     "db:status": "pnpm --filter @organic-os/database db:status",
     "db:reset": "pnpm --filter @organic-os/database db:reset",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "sessions:cleanup": "pnpm --filter @organic-os/worker sessions:cleanup"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
