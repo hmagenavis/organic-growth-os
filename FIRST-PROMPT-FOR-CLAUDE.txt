@@ -1,0 +1,53 @@
+Read CLAUDE.md and docs/MASTER-PRD.md in full.
+
+Do NOT start coding the application yet.
+
+Your first task is architecture and planning only.
+
+Execute section 191 of MASTER-PRD.md.
+
+Create:
+
+1. docs/ARCHITECTURE.md
+2. docs/DATA-MODEL.md
+3. docs/API-CONTRACTS.md
+4. docs/AI-COST-ARCHITECTURE.md
+5. docs/SECURITY.md
+6. docs/EXECUTION-SAFETY.md
+7. docs/TESTING.md
+8. docs/phases/PHASE-0.md
+9. docs/phases/PHASE-1.md
+10. docs/ADR/ with Architecture Decision Records for major architectural decisions.
+
+Requirements:
+
+- Do not write application code yet.
+- Do not initialize the production application yet.
+- Do not create placeholder implementations.
+- Optimize the architecture aggressively for low LLM/token usage.
+- Prefer deterministic code, SQL, parsers, embeddings and rules over LLM calls.
+- Design for multi-tenancy from day one.
+- Design every production-changing operation around:
+  Action -> Risk -> Snapshot -> Patch -> Execute -> QA -> Commit/Rollback.
+- Separate long-running jobs from the web application.
+- Make all external providers replaceable through adapters.
+- Make model selection configurable rather than hardcoded.
+- Include token budgets, caching, content hashing, diff-based analysis and incremental crawling.
+- Identify architectural contradictions or risks in MASTER-PRD.md instead of silently working around them.
+- Do not over-engineer the MVP.
+
+At the end, provide:
+
+A. Proposed system architecture
+B. Repository structure
+C. Database domain map
+D. Major technology decisions
+E. Biggest technical risks
+F. Biggest security risks
+G. Biggest AI cost risks
+H. Recommended implementation order
+I. What should specifically NOT be built in the first MVP
+J. Any changes you recommend to MASTER-PRD.md before coding
+
+Stop after completing the architecture documents.
+Do not begin Phase 0 implementation until explicitly instructed.

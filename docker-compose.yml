@@ -1,0 +1,40 @@
+# Local development database only. Never used for production or CI.
+#
+#   Start:     docker compose up -d
+#   Stop:      docker compose down
+#   Wipe:      docker compose down -v      (destroys the local volume)
+#
+# After starting, create roles and schema:
+#   pnpm db:bootstrap && pnpm db:migrate
+#
+# The image ships pgvector, which the platform requires.
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: organic-os-postgres
+    restart: unless-stopped
+    environment:
+      # Local-only superuser credentials. This server must never be exposed beyond
+      # the developer's machine, and these values must never be reused elsewhere.
+      POSTGRES_USER: ${POSTGRES_SUPERUSER:-organic_os_admin}
+      POSTGRES_PASSWORD: ${POSTGRES_SUPERUSER_PASSWORD:-local-dev-only-password}
+      POSTGRES_DB: ${POSTGRES_DB:-organic_os}
+    ports:
+      # Bound to loopback so the database is not reachable from the network.
+      - '127.0.0.1:5432:5432'
+    volumes:
+      - organic-os-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        [
+          'CMD-SHELL',
+          'pg_isready -U ${POSTGRES_SUPERUSER:-organic_os_admin} -d ${POSTGRES_DB:-organic_os}',
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  organic-os-postgres-data:
+    name: organic-os-postgres-data

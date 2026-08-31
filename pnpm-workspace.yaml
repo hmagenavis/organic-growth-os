@@ -1,0 +1,9 @@
+packages:
+  - 'apps/*'
+  - 'packages/*'
+
+# pnpm blocks dependency build scripts by default and no dependency currently needs
+# one: esbuild resolves its platform binary through its optional dependency, so its
+# install script is unnecessary. Keep this list empty unless a package genuinely
+# requires a build step, and review every addition (docs/SECURITY.md §8).
+onlyBuiltDependencies: []

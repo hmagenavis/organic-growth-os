@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Format check
+        run: pnpm format:check
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Test
+        run: pnpm test
+
+      # Real PostgreSQL via Testcontainers: Row Level Security and tenant isolation
+      # are never verified against a substitute engine (docs/TESTING.md §2).
+      - name: Integration tests (PostgreSQL)
+        run: pnpm test:integration
+
+      - name: Build
+        run: pnpm build
+
+      # docs/SECURITY.md §8: no dependency with a known critical vulnerability.
+      - name: Audit (critical)
+        run: pnpm audit --audit-level critical
