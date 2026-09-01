@@ -74,44 +74,72 @@ This has to be revisited when the API is deployed and previews need real data. T
 answer then is an isolated preview database — Supabase branching — never shared staging
 with elevated credentials.
 
-## 5. Status — blocked on an account identity, not on a decision (2026-09-01)
+## 5. Live result (2026-09-01)
 
-**Not created.** The build is proven and the security posture is verified; what is
-missing is a GitHub↔Vercel authorization that only the account owner can grant.
+**Deployed.** `apps/web` is on Vercel, linked to `hmagenavis/organic-growth-os`.
 
-Verified locally so the import cannot fail on anything within our control:
+| Item | Value |
+|---|---|
+| Project | `organic-growth-os-web` |
+| Vercel team | `itamaravis-1252's projects` (Hobby) |
+| Linked GitHub identity | `hmagenavis` — the account that owns the repository |
+| Root Directory | `apps/web` |
+| Framework preset | Next.js |
+| Branch | `main` |
+| URL | `https://organic-growth-os-mjtractbg-itamaravis-1252s-projects.vercel.app` |
 
-- The exact `buildCommand` from `apps/web/vercel.json` runs clean —
-  `pnpm turbo run build --filter=@organic-os/web...` — workspace packages resolve to
-  `dist/` and three routes prerender.
-- `apps/web` needs **no database credential of any kind**. It imports exactly one
-  workspace module, `@organic-os/config/client`, which reads a single
-  `NEXT_PUBLIC_APP_NAME` through a static property access and strips unknown keys. Its
-  `package.json` has no dependency on `@organic-os/database`. This is Cloud 0.1's
-  security win stated as a property: there is nothing to leak because there is nothing
-  to hold.
+### Verified, not assumed
 
-### The blocker
+Checked against the live deployment rather than inferred from configuration:
 
-The repository is `hmagenavis/organic-growth-os`; the Vercel account in use is
-`avisrismusic-5780's projects`, whose GitHub identity is `avisrismusic-star`. Linking
-returns:
+| Check | Result |
+|---|---|
+| Application loads | 200, renders the Phase 0.1 shell, `<title>Organic Growth OS</title>` — which also proves `NEXT_PUBLIC_APP_NAME` was injected |
+| `x-content-type-options` | `nosniff` |
+| `referrer-policy` | `no-referrer` |
+| `x-frame-options` | `DENY` |
+| `strict-transport-security` | present |
+| `x-powered-by` | **absent** — `poweredByHeader: false` holds in production |
+| Secrets in HTML | **none** |
+| Secrets in JavaScript | **none** — all six emitted chunks were fetched and scanned for `DATABASE_`, `SUPABASE_`, `service_role`, `postgres://`, `pooler.supabase`, `AUTH_SESSION_SECRET` and the three role names |
+| Database credentials in the project | **none** — exactly one environment variable exists, `NEXT_PUBLIC_APP_NAME` |
 
-```
-repo_no_access: You need admin or write access to the repository
-"organic-growth-os" to link it.
-```
+**Vercel Authentication is on.** An unauthenticated request to the deployment URL gets
+`302` to `vercel.com/sso-api`, so the staging build is not world-readable. That default
+was kept rather than disabled: an unfinished application has no reason to be public, and
+`X-Robots-Tag: noindex` is set as well.
 
-**A GitHub App installation only ever reaches repositories owned by the account it is
-installed on.** The Vercel App is already installed on `avisrismusic-star`, and no
-adjustment to that installation can reach a repository owned by `hmagenavis`. Adding
-`avisrismusic-star` as a collaborator does not help either, for the same reason —
-collaboration does not move a repository under another account's installation.
+### Deviation to be aware of
 
-The resolution is to sign in to Vercel with the GitHub identity that owns the
-repository, install the Vercel App on `hmagenavis` scoped to this repository alone, and
-import with the settings in §2 and §3. Repository ownership must not be changed and no
-second repository should be created.
+The import flow deploys the production branch, so the first deployment is a **Production**
+deployment rather than a Preview one. Cloud 0.1 asked for Development/Preview only. The
+practical exposure is nil — the project holds no secret, no database credential and no
+custom domain, and it is behind Vercel Authentication — but it is a difference from the
+brief and is recorded rather than glossed over. Changing the production branch to one that
+does not exist would make every `main` push a Preview deployment instead; that has not been
+done, because it would leave the project with no current deployment.
+
+### The account tangle, and why it took what it took
+
+Three GitHub identities are in play (`hmagenavis` owns the repository, `avisrismusic-star`
+and `itamaravis-art` are linked to two other Vercel accounts). **Vercel resolves importable
+repositories through the GitHub identity linked to the Vercel account** — not through which
+GitHub App installations exist. A GitHub App installed on a personal account only ever
+reaches repositories owned by that account, and personal accounts cannot be shared, so no
+installation could bridge the gap. Two dead ends were eliminated by evidence before the
+answer was found: granting `avisrismusic-star` write access (the error changed but the
+import still failed) and installing the App directly from GitHub (never linked to any
+Vercel account, because Vercel's callback never fired).
+
+The resolution was a Vercel account with **no GitHub connection yet** — `itamaravis-1252` —
+where connecting GitHub bound it to `hmagenavis` cleanly. The temporary collaborator grant
+was **removed** once it was no longer needed; `hmagenavis` is again the sole collaborator.
+
+Repository ownership was never changed and no second repository was created. One near-miss
+is worth recording: Vercel's "enter a Git repository URL" path leads to a **clone** flow that
+would have created `itamaravis-art/organic-growth-os` as a private copy and linked the
+project to the copy — silently detaching CI, the gated `staging` environment and its secrets
+from the deployment. It was stopped before the `Create` button.
 
 ## 6. Deferred to Cloud 0.2
 

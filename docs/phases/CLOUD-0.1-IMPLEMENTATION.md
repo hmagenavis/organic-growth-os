@@ -1,8 +1,7 @@
 # CLOUD-0.1 — GitHub + Supabase dev/staging + Vercel dev/staging (implementation record)
 
-Status: **PARTIAL — Supabase live, migrated and fully verified; GitHub live, CI green
-and the staging environment gated; Vercel blocked on a GitHub account authorization**
-(2026-09-01)
+Status: **PASS — Supabase live, migrated and fully verified; GitHub CI green with a
+gated staging environment; `apps/web` deployed to Vercel and verified** (2026-09-01)
 Scope: remove the local Windows/Docker environment as a single point of failure.
 
 **The primary objective is met.** Phase 0.4.2A, which could not be verified on the
@@ -187,7 +186,7 @@ id. Six tests cover it, including one asserting the body contains none of `datab
 | **GitHub Actions CI** | **green** — run `33485884835`, all of the above plus **235 integration tests** against real PostgreSQL |
 | Supabase compatibility spike | **verified live** against `organic-growth-os-dev` (§3) |
 | `pnpm db:verify:staging` | **25 passed, 0 failed** against the real project (§10) |
-| Vercel deployment | **not created** — blocked on a GitHub account authorization (§10) |
+| Vercel deployment | **live and verified** — headers, no secrets, no DB credentials (§10) |
 
 ## 9. Transport security — a defect found live, and closed
 
@@ -259,13 +258,26 @@ can expose, and the reason this verifier exists.
 - `staging-database.yml` remains `workflow_dispatch`-only with `apply` defaulting to
   false. No pull request can reach a migration credential.
 
-### Vercel — blocked
+### Vercel — deployed
 
-Not created. `apps/web` builds clean with the exact checked-in `buildCommand`, and needs
-no database credential at all. The blocker is an account identity: the repository is
-owned by `hmagenavis`, the Vercel account's GitHub identity is `avisrismusic-star`, and a
-GitHub App installation only reaches repositories owned by the account it is installed
-on. Detail and resolution in `docs/cloud/VERCEL-STAGING.md` §5.
+`organic-growth-os-web`, root directory `apps/web`, linked to `hmagenavis/organic-growth-os`
+and serving at
+`https://organic-growth-os-mjtractbg-itamaravis-1252s-projects.vercel.app`.
+
+Verified against the live deployment: the page renders and its `<title>` proves
+`NEXT_PUBLIC_APP_NAME` was injected; `x-content-type-options`, `referrer-policy`,
+`x-frame-options` and HSTS are all present; `x-powered-by` is absent. The HTML and all six
+emitted JavaScript chunks were fetched and scanned — **no** `DATABASE_`, `SUPABASE_`,
+`service_role`, `postgres://` or role name appears anywhere. The project holds **exactly one**
+environment variable, `NEXT_PUBLIC_APP_NAME`. Vercel Authentication is left on, so the
+staging build is not world-readable.
+
+Two things worth carrying forward, both in `docs/cloud/VERCEL-STAGING.md` §5: the first
+deployment landed as **Production** rather than Preview (the import flow deploys the
+production branch), and Vercel resolves importable repositories through the GitHub identity
+linked to the Vercel account — not through which App installations exist. That second fact
+is what made this step long, and it is the thing to remember when `apps/api` is deployed in
+Cloud 0.2.
 
 ## 11. Architecture changes
 
