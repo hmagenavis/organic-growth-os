@@ -93,6 +93,19 @@ adaptation was needed and no migration was touched.**
 `organic_os_admin`, and it is why `DATABASE_ADMIN_URL` appears in no deployment, no CI
 environment and no Vercel variable. The three roles we create are all `NOBYPASSRLS`.
 
+**Second security finding, and it resolves well:** Supabase auto-generates a PostgREST
+Data API over `public`, which is where our schema will live. It will **not** expose our
+tables. The default privileges granting `anon` / `authenticated` / `service_role` access
+to new objects in `public` are attached to objects created by `postgres`; `pg_default_acl`
+has no entry for `organic_os_migrator`, which creates every one of our tables. PostgREST
+connects as `anon`/`authenticated` and would be refused on privilege, before RLS is even
+consulted. Disabling the Data API entirely is still recommended as defence in depth and is
+listed as a human action.
+
+**Third:** the linter's `extension_in_public` warning for `citext` and `vector` is
+accepted deliberately — its premise is Data API exposure, which does not apply here, and
+`public` buys exact parity with a local Docker database (`SUPABASE-STAGING.md` §1).
+
 **Not yet done:** bootstrap, migrations and `pnpm db:verify:staging` — all three need
 role passwords a human must choose (§9).
 
@@ -197,13 +210,17 @@ Confirm the exact pooler host in the dashboard's *Connect* dialog — the region
 (`aws-0-` / `aws-1-`) varies by project. Use the **pooler** host, never
 `db.<ref>.supabase.co`, which is IPv6-only.
 
-**B. GitHub `staging` Environment.** Repository → Settings → Environments → New
+**B. Optional, recommended: disable the Data API** on `organic-growth-os-dev`
+(Dashboard → Project Settings → API). Not required — our tables are unreachable through
+it by construction — but the smallest surface is no surface.
+
+**C. GitHub `staging` Environment.** Repository → Settings → Environments → New
 environment `staging`. Add `STAGING_DB_HOST` as a **variable** and
 `STAGING_DATABASE_URL` / `STAGING_DATABASE_MIGRATOR_URL` as **secrets**. Consider
 required reviewers — that is what turns the manual migration workflow into a reviewed
 one.
 
-**C. Vercel project.** Requires an interactive login; no Vercel CLI is installed here.
+**D. Vercel project.** Requires an interactive login; no Vercel CLI is installed here.
 
 ```bash
 npm i -g vercel

@@ -71,6 +71,38 @@ deployment, no CI environment and no Vercel variable
 (`docs/cloud/ENVIRONMENT-MATRIX.md` §6). The three application roles we create are all
 `NOBYPASSRLS`, verified by probe and re-asserted on every bootstrap.
 
+### The Data API, and why our schema will not be exposed through it
+
+Supabase auto-generates a PostgREST Data API over the `public` schema, reachable from a
+browser with the `anon` key. Our schema lives in `public`, so this deserved a definite
+answer rather than an assumption.
+
+**It will not expose our tables**, and the reason is structural: the default privileges
+that grant `anon`, `authenticated` and `service_role` full access to new objects in
+`public` are attached to objects created by **`postgres`** and `supabase_admin`.
+`pg_default_acl` carries **no entry for `organic_os_migrator`**, which is the role that
+creates every one of our tables. Tables it creates therefore start with no grant to any
+API role, and PostgREST — which connects as `anon` or `authenticated` — gets permission
+denied before RLS is even consulted.
+
+That is defence in depth on top of the model we already have: FORCE RLS, policies granted
+`TO organic_os_runtime` only, and no `anon`/`authenticated` role anywhere in our
+connection strings.
+
+**Recommended anyway:** disable the Data API for this project (Dashboard → Project
+Settings → API), because the smallest surface is no surface. It is a project setting, not
+a repository change, so it is listed as a human action rather than done here.
+
+### The `extension_in_public` advisory
+
+Supabase's linter flags `citext` and `vector` as installed in `public`. The warning
+exists because extension functions in `public` become callable through the Data API. In
+this project that premise does not hold — the Data API cannot reach our objects (above),
+and both extensions expose type operators rather than privileged operations. Keeping them
+in `public` buys exact parity with a local Docker database and avoids a `search_path`
+adaptation that would otherwise be needed. **If the Data API is ever enabled and used,
+revisit this.**
+
 ## 2. Role model on Supabase
 
 Unchanged from Phase 0.2. The three roles are created by `pnpm db:bootstrap` using the
@@ -200,5 +232,8 @@ must choose, so it was not done:
 4. **Add the `staging` GitHub Environment** to the repository with
    `STAGING_DB_HOST` as a *variable* and the connection strings as *secrets*, so the
    `staging-database` workflow can run.
+5. **Optional, recommended:** disable the Data API for this project. Not required — our
+   tables are unreachable through it by construction — but the smallest surface is no
+   surface.
 
 Nothing here was guessed at, and no credential of any kind is stored in this repository.
