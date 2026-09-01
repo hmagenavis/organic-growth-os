@@ -1,33 +1,36 @@
 # SUPABASE-STAGING.md
 # Managed PostgreSQL for development/staging
 
-Status: **project not created** — see §7 for the exact human action required.
-Development/staging only. No production project exists and none is created by this
-foundation.
+Status: **project created and compatibility verified live; schema not yet applied.**
+Project `organic-growth-os-dev` (`cxychekcsqcyzbgouviz`), region `eu-central-1`,
+PostgreSQL 17.6, free tier. Development/staging only — no production project exists.
+Bootstrap and migrations still need role passwords a human must choose (§7).
 
 ---
 
 ## 1. Compatibility spike
 
-Verified against Supabase's documented platform behaviour. Items marked **live** can
-only be settled by running against the real project, and `pnpm db:verify:staging` is
-the thing that settles them.
+Verified **against the real project**, not inferred. Every row below was settled by a
+query or a probe on `organic-growth-os-dev`; probe objects were created and then dropped,
+leaving the database with only `citext` and `vector` installed and no tables.
 
-| Requirement | Finding | Source |
-|---|---|---|
-| PostgreSQL version | 17.x on new projects; the schema targets 16+ | project listing |
-| `pgvector` | available; `CREATE EXTENSION IF NOT EXISTS vector` is supported | Supabase extensions |
-| `citext` | available | Supabase extensions |
-| Custom schemas (`app`) | supported — `postgres` may create schemas | roles/superuser guide |
-| Custom functions (`app.current_org_id()` etc.) | supported | roles/superuser guide |
-| RLS + policies | supported and encouraged | RLS guide |
-| `FORCE ROW LEVEL SECURITY` | standard PostgreSQL, requires table ownership; the migrator owns the tables it creates | **live** |
-| Custom roles | supported — `postgres` holds `CREATEROLE` | roles/superuser guide |
-| `GRANT` / `REVOKE` | supported | roles/superuser guide |
-| `set_config(..., true)` / `SET LOCAL` | standard PostgreSQL; the question is the **pooler**, see §3 | **live** |
-| Triggers (`app.set_updated_at()`) | supported | roles/superuser guide |
-| Migrations 0001–0005 | forward-only, no superuser-only statement identified | **live** |
-| **True superuser** | **not available.** Documented unsupported operations are exactly two: `COPY ... FROM PROGRAM` and `ALTER USER ... WITH SUPERUSER` | [roles, superuser access and unsupported operations](https://supabase.com/docs/guides/database/postgres/roles-superuser) |
+| Requirement | Finding |
+|---|---|
+| PostgreSQL version | **17.6** — the schema targets 16+ |
+| `pgvector` | available 0.8.2, **installed into `public`** |
+| `citext` | available 1.6, **installed into `public`**; `'a'::citext = 'A'::citext` → true |
+| Custom schema | `CREATE SCHEMA` succeeded |
+| Custom functions | `current_setting(..., true)`-based resolver created |
+| Triggers | `BEFORE UPDATE ... EXECUTE FUNCTION` created |
+| RLS + policies | `ENABLE ROW LEVEL SECURITY` + `CREATE POLICY` succeeded |
+| `FORCE ROW LEVEL SECURITY` | **`relforcerowsecurity = true`** on the probe table |
+| Custom roles | `CREATE ROLE ... NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS NOREPLICATION NOINHERIT` produced **exactly** those attributes |
+| `GRANT` / `REVOKE` | `GRANT CONNECT`/`CREATE ON DATABASE` and `GRANT CREATE, USAGE ON SCHEMA public` all succeeded |
+| `REVOKE CREATE ON SCHEMA public FROM PUBLIC` | already the state — PUBLIC holds no `CREATE` on `public` (PostgreSQL 15+ default), so the bootstrap statement is a harmless no-op |
+| `set_config(..., true)` | set inside a transaction → visible; after the transaction ended → **NULL** |
+| Database owner | `postgres` — so `GRANT CREATE ON DATABASE` works |
+| `public` schema owner | `pg_database_owner`, and `postgres` is a member — so schema grants work |
+| **True superuser** | **not available.** `postgres` is `rolsuper = false`, with `CREATEROLE`, `CREATEDB` and **`BYPASSRLS`**. Documented unsupported operations are exactly two: `COPY ... FROM PROGRAM` and `ALTER USER ... WITH SUPERUSER` |
 
 ### Does anything we do require a superuser?
 
@@ -39,24 +42,34 @@ it actually needs is `CREATE EXTENSION`, `CREATE ROLE` and `GRANT` — all of wh
 Supabase `postgres` role holds. It does **not** issue either unsupported operation. Its
 one Supabase-specific risk is `search_path`, below.
 
-### The one real compatibility risk: `citext` resolution
+### The `citext` resolution risk did not materialise — and here is why
 
-Managed platforms install extensions into a dedicated schema (`extensions`) rather than
-`public`, and set `search_path` per role. A role **we create** does not inherit the
-platform role's `search_path`. If `citext` is not resolvable, every statement touching
-`users.email` or `organizations.slug` fails — including migration 0001.
+The risk was real and worth checking: managed platforms install extensions into a
+dedicated `extensions` schema, and a role **we** create does not inherit the platform
+role's `search_path`. If `citext` were unresolvable, migration 0001 would fail on
+`users.email`.
 
-- **Adaptation:** an administrative `ALTER ROLE <role> SET search_path = public, extensions`
-  for each of the three roles, executed as part of **staging bootstrap**.
-- **Not a migration.** This is environment configuration, not schema. Migrations
-  0001–0005 stay byte-identical and their checksums stay valid. STEP 8's distinction
-  applies exactly: a *platform* incompatibility gets a bootstrap-specific administrative
-  step; only a *schema* change would justify a new forward migration.
-- **Does it change the security architecture?** No. `search_path` is name resolution,
-  not privilege. No role gains a capability.
-- **Verified by:** the `types.resolvable` check in `pnpm db:verify:staging`, which runs
-  `SELECT 'a'::citext = 'A'::citext` as the runtime role and fails loudly with the fix
-  in the message.
+It does not happen here. The `postgres` role's `search_path` is
+`"$user", public, extensions`, and a `CREATE EXTENSION` with no `SCHEMA` clause lands in
+the first usable entry — `public`. Both extensions were installed there deliberately, so
+staging matches a local Docker database exactly and our roles (default `"$user", public`)
+resolve `citext` with no extra configuration.
+
+**Consequence: no adaptation is needed, and no migration was touched.** Should a future
+project ever install them into `extensions` instead, the fix is an administrative
+`ALTER ROLE <role> SET search_path = public, extensions` during staging bootstrap —
+environment configuration, not schema, so migration checksums stay valid and no role
+gains a privilege (`search_path` is name resolution). The `types.resolvable` check in
+`pnpm db:verify:staging` fails loudly with that fix in its message.
+
+### One finding that is a security note, not a blocker
+
+**Supabase's `postgres` role holds `BYPASSRLS`.** It is not a superuser, but it can read
+past every policy. That makes the bootstrap credential materially more powerful here than
+the local `organic_os_admin`, and it is the reason `DATABASE_ADMIN_URL` appears in no
+deployment, no CI environment and no Vercel variable
+(`docs/cloud/ENVIRONMENT-MATRIX.md` §6). The three application roles we create are all
+`NOBYPASSRLS`, verified by probe and re-asserted on every bootstrap.
 
 ## 2. Role model on Supabase
 
@@ -175,6 +188,17 @@ or disable RLS · every migration applied with a matching checksum.
 
 ## 7. Human action required
 
-Creating a Supabase project is a billing-, region- and account-level decision. It has
-not been done. See `docs/phases/CLOUD-0.1-IMPLEMENTATION.md` §"Remaining human actions"
-for the exact steps and the values needed afterwards.
+The project exists and is verified compatible. What remains needs a credential a human
+must choose, so it was not done:
+
+1. **Get the database password.** Supabase Dashboard → `organic-growth-os-dev` →
+   Project Settings → Database → *Reset database password*. It is shown once.
+2. **Choose three role passwords** for `organic_os_migrator`, `organic_os_runtime` and
+   `organic_os_provisioner`. These are yours; nothing in this repository generates or
+   stores them.
+3. **Run bootstrap and migrations** with the commands in §5, then `pnpm db:verify:staging`.
+4. **Add the `staging` GitHub Environment** to the repository with
+   `STAGING_DB_HOST` as a *variable* and the connection strings as *secrets*, so the
+   `staging-database` workflow can run.
+
+Nothing here was guessed at, and no credential of any kind is stored in this repository.

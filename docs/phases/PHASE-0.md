@@ -1,10 +1,11 @@
 # PHASE-0.md — Foundation
 
-Status: IN PROGRESS — §0.1, §0.2, the authentication half of §0.3 and the
-authorization core (§0.4.1) complete and verified; the member-administration half of
-§0.4.2 (§0.4.2A) code complete with its PostgreSQL gates unrun (2026-08-31, see
+Status: IN PROGRESS — §0.1, §0.2, the authentication half of §0.3, the authorization
+core (§0.4.1) and member administration (§0.4.2A) complete and **verified in GitHub
+Actions** against real PostgreSQL (2026-09-01, see
 PHASE-0.1/0.2/0.3/0.4.1/0.4.2A-IMPLEMENTATION.md); §0.4.2B onwards and §0.5–§0.6 not
-started
+started. Cloud Foundation 0.1 made CI the authoritative verifier
+(docs/phases/CLOUD-0.1-IMPLEMENTATION.md).
 PRD source: §165
 Duration estimate: 2–3 weeks of focused work
 Exit gate: BUILD → TEST → REVIEW → SECURITY → COST REVIEW (PRD §0)
@@ -71,7 +72,7 @@ authentication event has no organization at the moment it happens.
   `audit_logs` is written only under a proven organization. No organization id is
   invented.
 
-### 0.4.2A Member administration, session invalidation, tenant audit, provisioning — CODE COMPLETE, INTEGRATION GATES UNRUN
+### 0.4.2A Member administration, session invalidation, tenant audit, provisioning — COMPLETE
 - Member mutation API (attach, role change, client-scope replacement, removal), all
   `agency_admin` only, with self-mutation and last-admin protections.
 - Security-sensitive membership changes revoke every server-side session of the
@@ -79,9 +80,9 @@ authentication event has no organization at the moment it happens.
 - Real tenant audit rows for every administrative mutation, append-only.
 - Atomic, idempotent first-organization provisioning through an operator command; no
   HTTP surface, no public sign-up (ADR-0018).
-- Static gates pass; the PostgreSQL integration suites are written but were not
-  executed — Docker Desktop on the development machine fails to start
-  (PHASE-0.4.2A-IMPLEMENTATION.md §15, §17).
+- Verified in GitHub Actions: **235 integration tests** against real PostgreSQL,
+  including the concurrency race on the last-agency-admin invariant and the
+  0004→0005 upgrade migration (PHASE-0.4.2A-IMPLEMENTATION.md §15).
 
 ### 0.4.2B Clients, sites, invitations & audit read — NOT STARTED
 - Clients and sites CRUD APIs behind the registry's existing write permissions,

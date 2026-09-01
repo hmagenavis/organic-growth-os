@@ -1,10 +1,11 @@
 # PHASE-0.4.2A — Membership administration, session invalidation, tenant audit & secure provisioning (implementation record)
 
-Status: **CODE COMPLETE — VERIFICATION BLOCKED** (2026-08-31)
+Status: **PASS** — verified 2026-09-01
 Scope source: `docs/phases/PHASE-0.md` §0.4.2 (member administration half only)
-Static gates pass. The PostgreSQL integration gates **have not been run**: Docker
-Desktop on the development machine fails to start for a reason outside this repository.
-See §15.
+All gates pass. The PostgreSQL suites were executed in GitHub Actions
+(run `33485884835`, commit `dca344c`) after Cloud Foundation 0.1 made CI reachable;
+they could not run on the development machine because Docker Desktop cannot start
+there. See §15.
 
 Phase 0.4.1 answered *what organization may this user act in, and as what*, and
 deliberately added no mutation. This sub-phase adds the four mutations that change
@@ -511,46 +512,53 @@ column-scoped `UPDATE (last_login_at)` from 0003). Asserted.
 | `pnpm build` | clean |
 | `pnpm audit --audit-level critical` | no known vulnerabilities |
 
-### Integration gates — NOT RUN
+### Integration gates — PASS
 
-Docker Desktop 4.62.0 on this machine fails to start its backend:
+Executed on `ubuntu-latest` in GitHub Actions, against real PostgreSQL 16 started by
+Testcontainers, from a database created and migrated inside the runner:
 
-```
-starting services: initializing Inference manager:
-listening on unix://C:\Users\<user>\AppData\Local\Docker\run\dockerInference:
-remove …: The file cannot be accessed by the system.
-(listener: The filename, directory name, or volume label syntax is incorrect.)
-```
+| Suite | Tests |
+|---|---|
+| `packages/database` integration (10 files) | **193 passing** |
+| `apps/api` integration (3 files) | **42 passing** |
 
-The underlying condition is `ERROR_INVALID_NAME` on the AF_UNIX `bind`: Winsock's
-`sockaddr_un.sun_path` is a narrow (ANSI) buffer, and this machine's home directory
-contains Hebrew characters that the system ANSI codepage cannot represent. Docker
-Desktop's "Inference manager" (Docker AI / Model Runner) therefore cannot create its
-socket, and the orphaned stub it leaves behind is an inaccessible reparse point that no
-process can delete.
+Of those, the suites this sub-phase added:
 
-Everything reasonable was tried: restarting Docker Desktop, `wsl --shutdown`,
-`docker desktop start`, deleting and recreating the `run` directory, and disabling the
-feature three ways (`EnableDockerAI`, `EnableInference` and the `InferenceAvailable`
-feature-flag override, all confirmed to be keys Docker Desktop 4.62 recognises). The
-backend crashed at the same point every time: `startInferenceManager` runs before, and
-independently of, those settings. Every Docker Desktop configuration change made during
-the investigation was reverted to its original value.
+| File | Tests |
+|---|---|
+| `administration/membership-administration.int.test.ts` | 45 |
+| `administration/membership-concurrency.int.test.ts` | 5 |
+| `provisioning.int.test.ts` | 18 |
+| `migrations/upgrade-0005.int.test.ts` | 10 |
+| `apps/api` `administration/administration.int.test.ts` | 13 |
 
-Consequences and options are in §17. The suites below are **written and typechecked but
-unexecuted**:
+The pre-existing suites ran unmodified and green: tenant isolation (22), the
+authentication store (26), authentication over HTTP (17), the authorization core (31),
+membership bootstrap (10), authorization over HTTP (12), empty-database migration (18)
+and the 0003→0004 upgrade (8).
 
-| Suite | File | Covers |
-|---|---|---|
-| Member administration | `packages/database/src/administration/membership-administration.int.test.ts` | attach / role / scope / remove, session revocation, audit contents and integrity, cross-tenant refusals, transaction rollback |
-| Concurrency | `packages/database/src/administration/membership-concurrency.int.test.ts` | mutual demotion, mutual removal, demotion racing removal, three-way race, concurrent promotions |
-| Provisioning | `packages/database/src/provisioning.int.test.ts` | atomicity, rollback, idempotency, runtime refusal, provisioner privileges, immediate usability |
-| Upgrade migration | `packages/database/src/migrations/upgrade-0005.int.test.ts` | 0004 → 0005 on populated data, FORCE RLS, append-only audit, grants |
-| HTTP administration | `apps/api/src/administration/administration.int.test.ts` | full cookie/CSRF flow, real logout on role change, non-enumeration, self-mutation, 422 invitation answer |
+### What the first CI run found
 
-Also unexecuted for the same reason: the Phase 0.2 tenant-isolation suite, the Phase 0.3
-authentication suite and the Phase 0.4.1 authorization suite, which are unmodified by
-this sub-phase.
+The first run (`33485213688`) failed 13 tests, and **every one was a defect in the test
+harness rather than in the product** — which is the outcome that makes the run worth
+having, because each failure was a security control doing its job against a fixture
+that had not respected it:
+
+- **6 in `membership-administration.int.test.ts`.** A `beforeEach` widened
+  `client_access_mode` to `all_clients` while the membership still held
+  `client_viewer`, and `memberships_client_viewer_is_scoped` rejected it (SQLSTATE
+  23514). The CHECK constraint from migration 0004 refused a state the architecture
+  says cannot exist. Fixtures now restore the role before the access mode.
+- **2 in `provisioning.int.test.ts`.** Two assertions read `memberships` with a bare
+  provisioner query and no `app.current_org_id`, so Row Level Security correctly
+  returned nothing. One of them — "no organization without an agency admin" — could not
+  be asked as a single cross-tenant statement at all, and now asks it per organization
+  under each organization's own context.
+- **5 in `membership-concurrency.int.test.ts`.** `agencyAdminCount()` and the fixture
+  reset had the same missing tenant context, so the count was always zero and the reset
+  silently did nothing.
+
+No production code changed (`dca344c`).
 
 ### Test coverage by requirement (written, pending execution)
 
@@ -622,29 +630,15 @@ password prompt uses `node:process` raw mode and the argument parser uses
 6. **The provisioning credential is an operator secret.** Anyone holding
    `DATABASE_PROVISIONER_URL` can create tenants and accounts. That is the intended
    trust boundary (ADR-0018); it is not reachable from the network.
-7. **The integration gates have not been executed** (§15). Everything asserted about
-   PostgreSQL behaviour in this document — locking, revocation atomicity, RLS
-   interaction, migration safety — is designed and encoded in tests, but **not
-   verified on this machine**. This is the reason the phase status is CODE COMPLETE
-   rather than PASS.
+7. **Verified in CI, not on the development machine.** Everything asserted about
+   PostgreSQL behaviour here — locking, revocation atomicity, RLS interaction, migration
+   safety — is proven by GitHub Actions against real PostgreSQL, not by a local run.
+   Docker Desktop cannot start on the development machine (§15), so CI is the only place
+   these suites execute. That is the intended arrangement rather than a workaround:
+   CI builds its database from migration 0001 every time, which is a stronger guarantee
+   than a developer's long-lived local database (docs/cloud/CLOUD-ARCHITECTURE.md §3).
 
 Nothing committed is a secret. No new environment variable was introduced.
-
-**To unblock verification**, in order of preference:
-
-- run `pnpm test:integration` on a machine (or CI runner) with a working Docker engine
-  — the GitHub Actions workflow already does exactly this;
-- or set `TEST_DATABASE_ADMIN_URL` to a PostgreSQL 16+ superuser connection **with the
-  `pgvector` extension available** and run the suites against it, which the harness
-  supports by design. The native PostgreSQL 17 on this machine does not ship pgvector,
-  and `bootstrapDatabase` requires it deliberately — that requirement was not relaxed
-  to make tests run;
-- disabling Docker Desktop's Docker AI / Model Runner feature does **not** work; it was
-  tried and reverted (§15). A real local fix is either a Docker Desktop release that
-  stops binding that socket unconditionally, or making the home directory path
-  representable in the system ANSI codepage — for example by enabling Windows' "Use
-  Unicode UTF-8 for worldwide language support", which needs a reboot. Neither is a
-  repository change.
 
 ---
 

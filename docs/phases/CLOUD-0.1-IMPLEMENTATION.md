@@ -1,7 +1,11 @@
 # CLOUD-0.1 — GitHub + Supabase dev/staging + Vercel dev/staging (implementation record)
 
-Status: **BLOCKED — repository work complete, no cloud resource created** (2026-08-31)
+Status: **PARTIAL — GitHub live and CI green; Supabase project created and verified;
+Vercel not created** (2026-09-01)
 Scope: remove the local Windows/Docker environment as a single point of failure.
+
+**The primary objective is met.** Phase 0.4.2A, which could not be verified on the
+development machine, is now verified in GitHub Actions against real PostgreSQL.
 
 Every change is additive and adapts to the existing architecture. **No security module
 was rewritten, no migration was edited, no ADR was superseded.**
@@ -25,41 +29,72 @@ was rewritten, no migration was edited, no ADR was superseded.**
 
 ## 2. GitHub
 
-- Repository initialised, branch `main`, working tree clean.
-- **No `origin` remote.** Nothing has been pushed and no repository has been created:
-  the account is a human choice and `gh` is authenticated for two of them (§9).
-- Phase 0.4.2A was committed locally so it can reach CI (`f0aaad8`).
-- `ci.yml` is unchanged in substance and remains the authoritative verifier: format,
-  lint, typecheck, unit tests, **`pnpm test:integration` against disposable PostgreSQL
-  via Testcontainers**, build, critical audit. `workflow_dispatch` was added so a
-  verification result can be refreshed without an empty commit.
-- It holds no cloud credential. The workflow that does is manual-dispatch only.
+- Repository: **https://github.com/hmagenavis/organic-growth-os** (public, `main`).
+- Three commits pushed: Phase 0.4.2A (`f0aaad8`), Cloud Foundation 0.1 (`51a502b`),
+  and the integration-fixture fixes CI exposed (`dca344c`).
+- Before pushing a public repository, the tree was scanned for committed credentials.
+  `.env` is git-ignored; only `.env.example` is tracked and every value in it is a
+  documented local placeholder. Every other match was code or a labelled test fixture.
+- **CI is green** (run `33485884835`).
+
+### Phase 0.4.2A verification — the point of this foundation
+
+| Suite | Result |
+|---|---|
+| Unit (whole workspace) | 466 passing |
+| `packages/database` integration (10 files) | **193 passing** |
+| `apps/api` integration (3 files) | **42 passing** |
+
+The first run (`33485213688`) failed 13 tests, and every one was a defect in the *test
+harness* rather than the product — each was a security control refusing a fixture that
+had not respected it: the `client_viewer` CHECK constraint rejecting a widened access
+mode, and Row Level Security returning zero rows to fixture queries that set no tenant
+context. Fixed in `dca344c`; no production code changed. Detail in
+`PHASE-0.4.2A-IMPLEMENTATION.md` §15.
+
+That is precisely the value CI was introduced to provide: these suites had never
+executed anywhere.
 
 ## 3. Supabase
 
-**No project was created.** Four projects exist in the account's single organization,
-all paused and all belonging to unrelated products; none was touched, because a
-verification run against a database nobody identified as staging is exactly what STEP 20
-forbids.
+**Project created:** `organic-growth-os-dev` (`cxychekcsqcyzbgouviz`), `eu-central-1`,
+PostgreSQL **17.6**, free tier ($0/month). Development/staging only; no production
+project exists. The four pre-existing projects in the account were not touched.
 
-Compatibility spike (documented sources, not assumptions):
-`docs/cloud/SUPABASE-STAGING.md` §1. Summary:
+The compatibility spike was run **against the real project**, not inferred. Full table in
+`docs/cloud/SUPABASE-STAGING.md` §1. Everything the architecture needs works:
 
-- PostgreSQL 17 on new projects; the schema targets 16+.
-- `pgvector` and `citext` are both available.
-- Custom schemas, functions, triggers, RLS, `GRANT`/`REVOKE`, and custom roles are
-  supported; `postgres` holds `CREATEROLE`.
-- **No superuser.** Supabase documents exactly two unsupported operations —
-  `COPY ... FROM PROGRAM` and `ALTER USER ... WITH SUPERUSER`. **Neither appears in
-  migrations 0001–0005 or in `bootstrapDatabase()`.** Nothing we do requires a
-  superuser.
-- One real risk, and it is not a schema problem: **`citext` resolution.** Managed
-  platforms install extensions into an `extensions` schema, and a role *we* create does
-  not inherit the platform role's `search_path`. The adaptation is an administrative
-  `ALTER ROLE … SET search_path = public, extensions` during staging bootstrap — **not**
-  a migration edit, and not a security change, because `search_path` is name resolution
-  rather than privilege. The `types.resolvable` check fails loudly with that fix in its
-  message.
+- `citext` 1.6 and `vector` 0.8.2 installed into `public`, so staging matches a local
+  Docker database exactly.
+- A probe role created with `NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS
+  NOREPLICATION NOINHERIT` came back holding **exactly** those attributes.
+- `CREATE SCHEMA`, custom functions, triggers, `ENABLE`/`FORCE ROW LEVEL SECURITY`,
+  `CREATE POLICY`, and the `GRANT`s bootstrap issues all succeeded.
+  `relforcerowsecurity` was `true` on the probe table.
+- `set_config(..., true)` was visible inside its transaction and **NULL** afterwards.
+- The database is owned by `postgres` and `public` by `pg_database_owner` (of which
+  `postgres` is a member), so every bootstrap grant works. `REVOKE CREATE ON SCHEMA
+  public FROM PUBLIC` is already the state on PostgreSQL 15+, making that statement a
+  no-op.
+- **No superuser-only operation exists anywhere in our migrations or bootstrap.** The two
+  operations Supabase documents as unsupported — `COPY ... FROM PROGRAM` and
+  `ALTER USER ... WITH SUPERUSER` — appear nowhere in this repository.
+
+Every probe object was dropped afterwards. The database now contains the two extensions,
+no tables and no `organic_os_*` roles — pristine for the real bootstrap.
+
+**The `citext` risk did not materialise.** It was worth checking, and the answer is that
+`postgres` has `search_path = "$user", public, extensions`, so a `CREATE EXTENSION` with
+no `SCHEMA` clause lands in `public`, where our roles' default search path finds it. **No
+adaptation was needed and no migration was touched.**
+
+**One security finding:** Supabase's `postgres` role is not a superuser but **does hold
+`BYPASSRLS`**. That makes the bootstrap credential more powerful here than the local
+`organic_os_admin`, and it is why `DATABASE_ADMIN_URL` appears in no deployment, no CI
+environment and no Vercel variable. The three roles we create are all `NOBYPASSRLS`.
+
+**Not yet done:** bootstrap, migrations and `pnpm db:verify:staging` — all three need
+role passwords a human must choose (§9).
 
 ## 4. Connection strategy
 
@@ -132,39 +167,53 @@ id. Six tests cover it, including one asserting the body contains none of `datab
 | `pnpm format:check` | clean |
 | `pnpm lint` | clean |
 | `pnpm typecheck` | clean |
-| `pnpm test` | **466 passing**, up from 460 (6 new readiness tests) |
+| `pnpm test` | **466 passing** |
 | `pnpm build` | clean |
 | `pnpm audit --audit-level critical` | no known vulnerabilities |
-| GitHub Actions CI | **not run** — no remote exists yet |
-| `pnpm db:verify:staging` | **not run** — no staging project exists yet |
+| **GitHub Actions CI** | **green** — run `33485884835`, all of the above plus **235 integration tests** against real PostgreSQL |
+| Supabase compatibility spike | **verified live** against `organic-growth-os-dev` (§3) |
+| `pnpm db:verify:staging` | **not run** — needs role passwords (§9) |
+| Vercel deployment | **not created** (§9) |
 
 ## 9. Remaining human actions
 
-Each is a point where an account, a billing decision or an interactive login is
-required, so none was guessed at.
+Each is a point where a credential or an interactive login is required, so none was
+guessed at.
 
-**A. GitHub repository.** `gh` is authenticated for two accounts — `hmagenavis`
-(active) and `FLYBACK770`. Creating a repository under the wrong one is not something to
-resolve by picking. Once the account and visibility are chosen:
+**A. Supabase database password + role passwords.**
+Dashboard → `organic-growth-os-dev` → Project Settings → Database → *Reset database
+password* (shown once). Then choose three role passwords and run, from the repository
+root:
 
 ```bash
-gh repo create <account>/organic-growth-os --private --source . --remote origin --push
+DATABASE_ADMIN_URL='postgres://postgres.cxychekcsqcyzbgouviz:<db-password>@aws-0-eu-central-1.pooler.supabase.com:5432/postgres' DATABASE_MIGRATOR_PASSWORD='<choose>' DATABASE_RUNTIME_PASSWORD='<choose>' DATABASE_PROVISIONER_PASSWORD='<choose>' pnpm db:bootstrap
+
+DATABASE_MIGRATOR_URL='postgres://organic_os_migrator.cxychekcsqcyzbgouviz:<migrator-password>@aws-0-eu-central-1.pooler.supabase.com:5432/postgres' pnpm db:migrate
+
+STAGING_DB_HOST='aws-0-eu-central-1.pooler.supabase.com' STAGING_DATABASE_URL='postgres://organic_os_runtime.cxychekcsqcyzbgouviz:<runtime-password>@aws-0-eu-central-1.pooler.supabase.com:5432/postgres' STAGING_DATABASE_MIGRATOR_URL='postgres://organic_os_migrator.cxychekcsqcyzbgouviz:<migrator-password>@aws-0-eu-central-1.pooler.supabase.com:5432/postgres' pnpm db:verify:staging
 ```
 
-This is what unblocks Phase 0.4.2A verification: the first push runs the integration
-suites that Docker cannot run locally.
+Confirm the exact pooler host in the dashboard's *Connect* dialog — the region prefix
+(`aws-0-` / `aws-1-`) varies by project. Use the **pooler** host, never
+`db.<ref>.supabase.co`, which is IPv6-only.
 
-**B. Supabase project.** Region and cost are the user's decision; the account has one
-organization (`avisrismusic-star's Org`). Suggested name `organic-growth-os-dev`, region
-matching the intended audience. Afterwards, the connection strings are needed for
-bootstrap and for the `staging` GitHub Environment.
+**B. GitHub `staging` Environment.** Repository → Settings → Environments → New
+environment `staging`. Add `STAGING_DB_HOST` as a **variable** and
+`STAGING_DATABASE_URL` / `STAGING_DATABASE_MIGRATOR_URL` as **secrets**. Consider
+required reviewers — that is what turns the manual migration workflow into a reviewed
+one.
 
-**C. Vercel project.** Requires `npm i -g vercel` and an interactive `vercel login`,
-then linking with Root Directory `apps/web`. No Vercel CLI is installed on this machine.
+**C. Vercel project.** Requires an interactive login; no Vercel CLI is installed here.
 
-**D. GitHub `staging` Environment.** After B: create the Environment, add
-`STAGING_DB_HOST` as a *variable* and the connection strings as *secrets*, and consider
-required reviewers on it.
+```bash
+npm i -g vercel
+vercel login
+cd apps/web && vercel link
+```
+
+Then in the project settings: Root Directory `apps/web`, *Include files outside root
+directory* on, Node 24.x, and one environment variable `NEXT_PUBLIC_APP_NAME`. Build and
+install commands come from the checked-in `apps/web/vercel.json`.
 
 ## 10. Architecture changes
 

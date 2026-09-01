@@ -1,8 +1,8 @@
 # CLOUD-ARCHITECTURE.md
 # Organic Growth OS — Cloud Foundation 0.1
 
-Status: **BLOCKED on human provisioning steps** (2026-08-31). Repository work complete;
-no cloud resource has been created. See `docs/phases/CLOUD-0.1-IMPLEMENTATION.md`.
+Status: **GitHub live and CI green; Supabase project created and verified compatible;
+Vercel not yet created** (2026-09-01). See `docs/phases/CLOUD-0.1-IMPLEMENTATION.md`.
 
 The goal of this foundation is narrow: **remove the local Windows/Docker environment as
 a single point of failure.** It changes where things run. It changes nothing about how
