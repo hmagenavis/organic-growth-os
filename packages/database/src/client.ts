@@ -1,6 +1,8 @@
 import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { Pool } from 'pg';
 
+import { tlsOptionsFor } from './tls.js';
+
 export type Database = NodePgDatabase<Record<string, never>>;
 
 /** Transaction-bound handle. Every tenant-scoped operation runs on one of these. */
@@ -39,6 +41,7 @@ export function createDatabase(options: CreateDatabaseOptions): DatabaseHandle {
 
   const pool = new Pool({
     connectionString,
+    ssl: tlsOptionsFor(connectionString),
     max: maxConnections,
     application_name: applicationName,
     options: [

@@ -34,6 +34,13 @@ jobs:
     timeout-minutes: 15
     environment: staging
 
+    # Every connection from this runner leaves the machine, so every one of them is
+    # opened with verify-full against the pinned Supabase root or refused outright
+    # (packages/database/src/tls.ts). The root CA is public; it is a variable-shaped
+    # value that happens to live in the repository, never a secret.
+    env:
+      DATABASE_SSL_ROOT_CERT: ${{ github.workspace }}/certs/supabase-prod-ca-2021.crt
+
     steps:
       - uses: actions/checkout@v4
 

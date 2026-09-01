@@ -1,5 +1,7 @@
 import { Client } from 'pg';
 
+import { tlsOptionsFor } from './tls.js';
+
 /**
  * One-time cluster bootstrap: extensions and database roles.
  *
@@ -62,7 +64,10 @@ function assertPasswordUsable(role: string, password: string): void {
  * Passwords are never logged, and the caller supplies them from the environment.
  */
 export async function bootstrapDatabase(options: BootstrapOptions): Promise<void> {
-  const client = new Client({ connectionString: options.adminUrl });
+  const client = new Client({
+    connectionString: options.adminUrl,
+    ssl: tlsOptionsFor(options.adminUrl),
+  });
   await client.connect();
 
   try {

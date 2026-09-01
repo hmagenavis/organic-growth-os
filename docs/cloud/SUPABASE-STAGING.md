@@ -169,6 +169,47 @@ Two consequences follow directly, and both are decisions rather than preferences
 | `DATABASE_PROVISIONER_URL` | Supavisor session 5432 | operator CLI, short-lived |
 | `DATABASE_ADMIN_URL` (bootstrap) | Supabase `postgres` role | one-off; never stored in a deployment |
 
+### Transport security: verified TLS, or no connection
+
+Found live during Cloud 0.1 rather than assumed, and it changed the code. `node-postgres`
+negotiates **no TLS at all** unless it is handed SSL options, and Supabase ships with
+*Enforce SSL* off "to maximise client compatibility". A connection string therefore said
+nothing about whether anything on that socket was encrypted, and nothing in this
+repository was setting SSL options.
+
+Be precise about what that did and did not expose, because the distinction decides how
+alarming it is. Authentication is `scram-sha-256` (verified on the live project), so the
+role password is a challenge-response and was **never recoverable from the wire**. What
+an unencrypted connection exposes is everything *after* authentication — every query,
+every tenant row, every session token — to a passive observer, and the whole session to
+an active man-in-the-middle, because nothing authenticates the server. **SCRAM protects
+the credential; it protects no data.**
+
+Two independent layers now close this, and each was verified against the live project:
+
+| Layer | Mechanism | Verified by |
+|---|---|---|
+| Server | *Enforce SSL on incoming connections* is **on** | a plaintext connection is refused with `ESSLREQUIRED` on both 5432 and 6543 |
+| Client | `packages/database/src/tls.ts` — a non-local connection gets `verify-full` or is refused | a connection with a deliberately wrong root CA is rejected; with the pinned root it reaches authentication |
+
+`sslmode=require` is deliberately **not** what this implements. It encrypts without
+authenticating the server, which stops passive snooping and does nothing about an active
+man-in-the-middle — and it is what most "add SSL" advice reaches for. `verify-full`
+requires the chain to terminate in the configured root *and* the hostname to match.
+
+`DATABASE_SSL_ROOT_CERT` names that root, as an absolute path to a PEM file or the PEM
+text itself. The root is committed at `certs/supabase-prod-ca-2021.crt` — a root CA is
+public, so it is a variable and never a secret. The copy in the repository was checked
+twice over: extracted from the live TLS handshake, and compared byte-for-byte against the
+copy the dashboard serves over a publicly-trusted connection. They are identical
+(SHA-256 `80:70:25:AD:…:72:E6:CA:FA`), which is what rules out trusting a certificate
+merely because a server offered it.
+
+Absence fails closed. An unset `DATABASE_SSL_ROOT_CERT` refuses a remote connection
+rather than quietly downgrading it to plaintext — the failure this exists to make
+impossible. Local development against Docker on `127.0.0.1` needs no certificate and
+must not set one.
+
 ## 4. Environment separation
 
 | Environment | Database | Migrations applied by |
@@ -218,22 +259,48 @@ every tenant table · an authentication context establishes no tenant access · 
 cannot create an organization, create a user, update or delete an audit row, perform DDL
 or disable RLS · every migration applied with a matching checksum.
 
-## 7. Human action required
+## 7. Live result (2026-09-01)
 
-The project exists and is verified compatible. What remains needs a credential a human
-must choose, so it was not done:
+Everything below was executed against the real project, not inferred.
 
-1. **Get the database password.** Supabase Dashboard → `organic-growth-os-dev` →
-   Project Settings → Database → *Reset database password*. It is shown once.
-2. **Choose three role passwords** for `organic_os_migrator`, `organic_os_runtime` and
-   `organic_os_provisioner`. These are yours; nothing in this repository generates or
-   stores them.
-3. **Run bootstrap and migrations** with the commands in §5, then `pnpm db:verify:staging`.
-4. **Add the `staging` GitHub Environment** to the repository with
-   `STAGING_DB_HOST` as a *variable* and the connection strings as *secrets*, so the
-   `staging-database` workflow can run.
-5. **Optional, recommended:** disable the Data API for this project. Not required — our
-   tables are unreachable through it by construction — but the smallest surface is no
-   surface.
+| Step | Result |
+|---|---|
+| `pnpm db:bootstrap` | extensions and three roles in place |
+| `pnpm db:migrate` | **0001–0005 applied** |
+| `pnpm db:status` | 5 applied, **0 pending** |
+| `pnpm db:verify:staging` | **25 passed, 0 failed, 0 skipped** |
 
-Nothing here was guessed at, and no credential of any kind is stored in this repository.
+Role attributes read back from `pg_roles` — none of the three holds `SUPERUSER`,
+`BYPASSRLS`, `CREATEDB`, `CREATEROLE` or `REPLICATION`, and the roles were not collapsed:
+
+| Role | `rolsuper` | `rolbypassrls` | `rolcreatedb` | `rolcreaterole` | `rolreplication` |
+|---|---|---|---|---|---|
+| `organic_os_migrator` | f | f | f | f | f |
+| `organic_os_runtime` | f | f | f | f | f |
+| `organic_os_provisioner` | f | f | f | f | f |
+
+**Enforce SSL is on** and **the Data API is disabled** (§3, §1). Both were verified from
+outside rather than trusted: a plaintext connection is refused with `ESSLREQUIRED`, and a
+valid publishable key against `/rest/v1/` now returns `Secret API key required`.
+
+### One real defect this run found, in the verifier itself
+
+The first live run reported `postgres.version` as **failing** on a PostgreSQL 17.6
+server. The environment was fine; the check was not. `SHOW server_version` returns its
+value in a column named `server_version`, and the code read `.version` — so it got
+`undefined`, parsed `NaN`, and failed a comparison it should have passed. It had never
+run against a real server before, which is exactly the class of bug a live verification
+exists to surface.
+
+Fixed by reading `current_setting('server_version_num')` — the integer the server
+computes for precisely this comparison (`170006`) — instead of parsing a display string
+that may carry a distribution suffix. **The check was corrected, not relaxed:** it still
+demands PostgreSQL 16 or newer, now expressed as `>= 160000`.
+
+## 8. Human action still required
+
+Nothing on the Supabase side. The remaining Cloud 0.1 item is the Vercel project, which
+needs a Vercel account authenticated as the GitHub user that owns the repository — see
+`docs/cloud/VERCEL-STAGING.md`.
+
+No credential of any kind is stored in this repository.

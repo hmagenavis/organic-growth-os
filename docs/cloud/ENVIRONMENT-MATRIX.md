@@ -32,6 +32,16 @@ accident cannot survive into the returned object. **Never put a secret under
 | `SERVICE_VERSION` | ✓ | — | ✓ | ✓ | — |
 | `API_HOST` / `API_PORT` | ✓ | — | — | ✓ | — |
 | `WORKER_HEARTBEAT_INTERVAL_MS` | ✓ | — | — | — | — |
+| `DATABASE_SSL_ROOT_CERT` | staging only | ✓ (`staging` env) | — | ✓ | ✓ |
+
+`DATABASE_SSL_ROOT_CERT` is the root certificate a **non-local** database connection must
+chain to, as an absolute path to a PEM file or the PEM text itself. It is a **variable,
+never a secret** — a root CA is published precisely so it can be distributed — and the
+Supabase root is committed at `certs/supabase-prod-ca-2021.crt`, so in CI it is a path
+rather than a stored value. It is what makes a managed connection `verify-full` rather
+than merely encrypted, and its absence refuses the connection rather than downgrading it
+(`packages/database/src/tls.ts`, `docs/cloud/SUPABASE-STAGING.md` §3). Local development
+against Docker on `127.0.0.1` neither needs nor sets it.
 
 ## 3. DATABASE_RUNTIME — the RLS-constrained application connection
 

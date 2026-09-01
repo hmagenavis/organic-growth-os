@@ -1,7 +1,8 @@
 # CLOUD-0.1 — GitHub + Supabase dev/staging + Vercel dev/staging (implementation record)
 
-Status: **PARTIAL — GitHub live and CI green; Supabase project created and verified;
-Vercel not created** (2026-09-01)
+Status: **PARTIAL — Supabase live, migrated and fully verified; GitHub live, CI green
+and the staging environment gated; Vercel blocked on a GitHub account authorization**
+(2026-09-01)
 Scope: remove the local Windows/Docker environment as a single point of failure.
 
 **The primary objective is met.** Phase 0.4.2A, which could not be verified on the
@@ -180,66 +181,100 @@ id. Six tests cover it, including one asserting the body contains none of `datab
 | `pnpm format:check` | clean |
 | `pnpm lint` | clean |
 | `pnpm typecheck` | clean |
-| `pnpm test` | **466 passing** |
+| `pnpm test` | **472 passing** (466 + 6 for the TLS policy) |
 | `pnpm build` | clean |
 | `pnpm audit --audit-level critical` | no known vulnerabilities |
 | **GitHub Actions CI** | **green** — run `33485884835`, all of the above plus **235 integration tests** against real PostgreSQL |
 | Supabase compatibility spike | **verified live** against `organic-growth-os-dev` (§3) |
-| `pnpm db:verify:staging` | **not run** — needs role passwords (§9) |
-| Vercel deployment | **not created** (§9) |
+| `pnpm db:verify:staging` | **25 passed, 0 failed** against the real project (§10) |
+| Vercel deployment | **not created** — blocked on a GitHub account authorization (§10) |
 
-## 9. Remaining human actions
+## 9. Transport security — a defect found live, and closed
 
-Each is a point where a credential or an interactive login is required, so none was
-guessed at.
+The one substantive finding of this session, and it changed the code.
 
-**A. Supabase database password + role passwords.**
-Dashboard → `organic-growth-os-dev` → Project Settings → Database → *Reset database
-password* (shown once). Then choose three role passwords and run, from the repository
-root:
+`node-postgres` negotiates **no TLS at all** unless it is handed SSL options, and
+Supabase ships with *Enforce SSL* off "to maximise client compatibility". Nothing in
+this repository was setting SSL options. A connection string therefore said nothing
+about whether anything on that socket was encrypted, and the first bootstrap would have
+run unencrypted over the public internet.
 
-```bash
-DATABASE_ADMIN_URL='postgres://postgres.cxychekcsqcyzbgouviz:<db-password>@aws-0-eu-central-1.pooler.supabase.com:5432/postgres' DATABASE_MIGRATOR_PASSWORD='<choose>' DATABASE_RUNTIME_PASSWORD='<choose>' DATABASE_PROVISIONER_PASSWORD='<choose>' pnpm db:bootstrap
+**Stated precisely, because the precision decides the severity.** Authentication is
+`scram-sha-256`, verified on the live project — so the role password is a
+challenge-response and was never recoverable from the wire. What an unencrypted
+connection exposes is everything *after* authentication: every query, every tenant row,
+every session token, to a passive observer; and the entire session to an active
+man-in-the-middle, because nothing authenticates the server. SCRAM protects the
+credential; it protects no data.
 
-DATABASE_MIGRATOR_URL='postgres://organic_os_migrator.cxychekcsqcyzbgouviz:<migrator-password>@aws-0-eu-central-1.pooler.supabase.com:5432/postgres' pnpm db:migrate
+Closed at two independent layers, each verified from outside rather than trusted:
 
-STAGING_DB_HOST='aws-0-eu-central-1.pooler.supabase.com' STAGING_DATABASE_URL='postgres://organic_os_runtime.cxychekcsqcyzbgouviz:<runtime-password>@aws-0-eu-central-1.pooler.supabase.com:5432/postgres' STAGING_DATABASE_MIGRATOR_URL='postgres://organic_os_migrator.cxychekcsqcyzbgouviz:<migrator-password>@aws-0-eu-central-1.pooler.supabase.com:5432/postgres' pnpm db:verify:staging
-```
+| Layer | Mechanism | Evidence |
+|---|---|---|
+| Server | *Enforce SSL on incoming connections* enabled | plaintext refused with `ESSLREQUIRED` on 5432 **and** 6543 |
+| Client | `packages/database/src/tls.ts` — non-local connections get `verify-full` or are refused | a deliberately wrong root CA is rejected; the pinned root reaches authentication |
 
-Confirm the exact pooler host in the dashboard's *Connect* dialog — the region prefix
-(`aws-0-` / `aws-1-`) varies by project. Use the **pooler** host, never
-`db.<ref>.supabase.co`, which is IPv6-only.
+`sslmode=require` was deliberately not the answer: it encrypts without authenticating
+the server, which is the half-measure most "add SSL" advice reaches for. The root is
+pinned at `certs/supabase-prod-ca-2021.crt`, named by `DATABASE_SSL_ROOT_CERT` (a
+variable, never a secret — a root CA is public). The committed copy was checked over two
+independent channels: extracted from the live TLS handshake, and downloaded from the
+dashboard over a publicly-trusted connection. Byte-for-byte identical, SHA-256
+`80:70:25:AD:…:72:E6:CA:FA` — which is what distinguishes a pinned root from trusting
+whatever a server happened to offer.
 
-**B. Optional, recommended: disable the Data API** on `organic-growth-os-dev`
-(Dashboard → Project Settings → API). Not required — our tables are unreachable through
-it by construction — but the smallest surface is no surface.
+Absence fails closed: an unset `DATABASE_SSL_ROOT_CERT` refuses a remote connection
+rather than silently downgrading it. Six unit tests cover the policy.
 
-**C. GitHub `staging` Environment.** Repository → Settings → Environments → New
-environment `staging`. Add `STAGING_DB_HOST` as a **variable** and
-`STAGING_DATABASE_URL` / `STAGING_DATABASE_MIGRATOR_URL` as **secrets**. Consider
-required reviewers — that is what turns the manual migration workflow into a reviewed
-one.
+## 10. Live results
 
-**D. Vercel project.** Requires an interactive login; no Vercel CLI is installed here.
+### Supabase — complete
 
-```bash
-npm i -g vercel
-vercel login
-cd apps/web && vercel link
-```
+| Step | Result |
+|---|---|
+| `pnpm db:bootstrap` | extensions + three roles created |
+| `pnpm db:migrate` | **0001–0005 applied** |
+| `pnpm db:status` | 5 applied, **0 pending** |
+| `pnpm db:verify:staging` | **25 passed, 0 failed, 0 skipped** |
+| Enforce SSL | on, verified from outside |
+| Data API | disabled, verified from outside |
 
-Then in the project settings: Root Directory `apps/web`, *Include files outside root
-directory* on, Node 24.x, and one environment variable `NEXT_PUBLIC_APP_NAME`. Build and
-install commands come from the checked-in `apps/web/vercel.json`.
+All three roles read back `NOSUPERUSER NOBYPASSRLS`, no `CREATEDB`, no `CREATEROLE`, no
+`REPLICATION`. They were not collapsed.
 
-## 10. Architecture changes
+**The verifier's own first live run found a bug in the verifier.** `postgres.version`
+failed on a PostgreSQL 17.6 server: `SHOW server_version` returns a column named
+`server_version`, the code read `.version`, got `undefined`, and compared `NaN`. Fixed
+by reading `current_setting('server_version_num')`. **Corrected, not relaxed** — it still
+requires 16 or newer. This is precisely the class of defect that only a real environment
+can expose, and the reason this verifier exists.
+
+### GitHub — complete
+
+- `staging` Environment created with **required reviewer** (`hmagenavis`) and
+  deployments restricted to `main`.
+- `STAGING_DB_HOST` as an environment **variable**; `STAGING_DATABASE_URL` and
+  `STAGING_DATABASE_MIGRATOR_URL` as environment **secrets** — not repository secrets,
+  so they carry the reviewer gate.
+- `staging-database.yml` remains `workflow_dispatch`-only with `apply` defaulting to
+  false. No pull request can reach a migration credential.
+
+### Vercel — blocked
+
+Not created. `apps/web` builds clean with the exact checked-in `buildCommand`, and needs
+no database credential at all. The blocker is an account identity: the repository is
+owned by `hmagenavis`, the Vercel account's GitHub identity is `avisrismusic-star`, and a
+GitHub App installation only reaches repositories owned by the account it is installed
+on. Detail and resolution in `docs/cloud/VERCEL-STAGING.md` §5.
+
+## 11. Architecture changes
 
 **NONE.** No ADR was superseded, no migration was edited, no security module was
 modified. Authentication, authorization, the tenancy model, the three-role model and the
 audit rules are untouched. `service_role`, Supabase Auth, the Data API and every Supabase
 client library are absent from the repository.
 
-## 11. Deferred
+## 12. Deferred
 
 - Hosting for `apps/api` on a container platform (Cloud 0.2), with its runtime
   connection string, `AUTH_SESSION_SECRET` and production cookie settings.

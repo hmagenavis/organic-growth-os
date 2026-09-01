@@ -160,6 +160,12 @@ export {
 } from './config.js';
 
 /**
+ * Transport security. A connection that leaves this machine is opened with verified
+ * TLS or not at all; see `src/tls.ts` for why `sslmode=require` is not the answer.
+ */
+export { DatabaseTlsError, SSL_ROOT_CERT_VARIABLE, tlsOptionsFor } from './tls.js';
+
+/**
  * Managed-environment verification (Cloud Foundation 0.1). Read-only and
  * rolled-back checks that the platform really provides the privileges, extensions and
  * transaction semantics the architecture assumes. Never a substitute for the

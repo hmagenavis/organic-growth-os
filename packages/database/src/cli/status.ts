@@ -2,13 +2,18 @@ import { Pool } from 'pg';
 
 import { describeConnection, migratorDatabaseEnvSchema, parseDatabaseEnv } from '../config.js';
 import { migrationStatus } from '../migrations/runner.js';
+import { tlsOptionsFor } from '../tls.js';
 import { createCliLogger, reportFailure } from './shared.js';
 
 const logger = createCliLogger('db:status');
 
 async function main(): Promise<void> {
   const env = parseDatabaseEnv(migratorDatabaseEnvSchema);
-  const pool = new Pool({ connectionString: env.DATABASE_MIGRATOR_URL, max: 1 });
+  const pool = new Pool({
+    connectionString: env.DATABASE_MIGRATOR_URL,
+    max: 1,
+    ssl: tlsOptionsFor(env.DATABASE_MIGRATOR_URL),
+  });
 
   logger.info(describeConnection(env.DATABASE_MIGRATOR_URL), 'migration status');
 

@@ -2,6 +2,7 @@ import { Pool } from 'pg';
 
 import { describeConnection } from '../config.js';
 import { loadMigrationFiles } from '../migrations/runner.js';
+import { tlsOptionsFor } from '../tls.js';
 
 /**
  * Environment verification for a managed (Supabase) staging database.
@@ -190,16 +191,30 @@ async function expectDenied(pool: Pool, sql: string): Promise<string | null> {
   }
 }
 
+/**
+ * `server_version_num` rather than `server_version`, for two reasons found the first
+ * time this ran against a real server. `SHOW server_version` returns its value in a
+ * column named `server_version`, not `version` — reading the wrong column produced
+ * `undefined`, and a NaN comparison reported PostgreSQL 17.6 as failing "16 or newer".
+ * And `server_version` is a display string: `Number.parseInt` on a distribution's
+ * `16.4 (Ubuntu 16.4-1.pgdg22.04+1)` happens to work, but only by luck of the leading
+ * digits. `server_version_num` is the integer the server computes for exactly this
+ * comparison (170006 = 17.6), so nothing is parsed out of prose.
+ */
 async function checkServerVersion(pool: Pool): Promise<StagingCheck> {
   const id = 'postgres.version';
   const title = 'PostgreSQL 16 or newer';
-  const result = await pool.query<{ version: string }>('SHOW server_version');
-  const version = result.rows[0]?.version ?? '(unknown)';
-  const major = Number.parseInt(version, 10);
+  const result = await pool.query<{ display: string; numeric: string }>(
+    `SELECT current_setting('server_version') AS display,
+            current_setting('server_version_num') AS numeric`,
+  );
 
-  return Number.isFinite(major) && major >= 16
-    ? pass(id, title, `server_version ${version}`)
-    : fail(id, title, `server_version ${version}; the schema targets 16+ (ADR-0002)`);
+  const display = result.rows[0]?.display ?? '(unknown)';
+  const numeric = Number.parseInt(result.rows[0]?.numeric ?? '', 10);
+
+  return Number.isFinite(numeric) && numeric >= 160_000
+    ? pass(id, title, `server_version ${display} (${String(numeric)})`)
+    : fail(id, title, `server_version ${display}; the schema targets 16+ (ADR-0002)`);
 }
 
 async function checkExtensions(pool: Pool): Promise<StagingCheck[]> {
@@ -559,7 +574,11 @@ async function checkRuntimeDenials(pool: Pool): Promise<StagingCheck[]> {
 }
 
 async function checkMigrationState(migratorUrl: string): Promise<StagingCheck[]> {
-  const pool = new Pool({ connectionString: migratorUrl, max: 1 });
+  const pool = new Pool({
+    connectionString: migratorUrl,
+    max: 1,
+    ssl: tlsOptionsFor(migratorUrl),
+  });
 
   try {
     const files = await loadMigrationFiles();
@@ -633,7 +652,11 @@ export async function verifyStagingEnvironment(
 
   // max: 1 so consecutive statements provably reuse one client-side slot, which is
   // what makes the residue probe meaningful rather than incidental.
-  const runtime = new Pool({ connectionString: input.runtimeUrl, max: 1 });
+  const runtime = new Pool({
+    connectionString: input.runtimeUrl,
+    max: 1,
+    ssl: tlsOptionsFor(input.runtimeUrl),
+  });
   const checks: StagingCheck[] = [];
 
   try {

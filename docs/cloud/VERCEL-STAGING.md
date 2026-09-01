@@ -74,11 +74,44 @@ This has to be revisited when the API is deployed and previews need real data. T
 answer then is an isolated preview database — Supabase branching — never shared staging
 with elevated credentials.
 
-## 5. Human action required
+## 5. Status — blocked on an account identity, not on a decision (2026-09-01)
 
-Creating and linking a Vercel project requires an authenticated account and a
-scope/team choice. It has not been done. Steps are in
-`docs/phases/CLOUD-0.1-IMPLEMENTATION.md` §"Remaining human actions".
+**Not created.** The build is proven and the security posture is verified; what is
+missing is a GitHub↔Vercel authorization that only the account owner can grant.
+
+Verified locally so the import cannot fail on anything within our control:
+
+- The exact `buildCommand` from `apps/web/vercel.json` runs clean —
+  `pnpm turbo run build --filter=@organic-os/web...` — workspace packages resolve to
+  `dist/` and three routes prerender.
+- `apps/web` needs **no database credential of any kind**. It imports exactly one
+  workspace module, `@organic-os/config/client`, which reads a single
+  `NEXT_PUBLIC_APP_NAME` through a static property access and strips unknown keys. Its
+  `package.json` has no dependency on `@organic-os/database`. This is Cloud 0.1's
+  security win stated as a property: there is nothing to leak because there is nothing
+  to hold.
+
+### The blocker
+
+The repository is `hmagenavis/organic-growth-os`; the Vercel account in use is
+`avisrismusic-5780's projects`, whose GitHub identity is `avisrismusic-star`. Linking
+returns:
+
+```
+repo_no_access: You need admin or write access to the repository
+"organic-growth-os" to link it.
+```
+
+**A GitHub App installation only ever reaches repositories owned by the account it is
+installed on.** The Vercel App is already installed on `avisrismusic-star`, and no
+adjustment to that installation can reach a repository owned by `hmagenavis`. Adding
+`avisrismusic-star` as a collaborator does not help either, for the same reason —
+collaboration does not move a repository under another account's installation.
+
+The resolution is to sign in to Vercel with the GitHub identity that owns the
+repository, install the Vercel App on `hmagenavis` scoped to this repository alone, and
+import with the settings in §2 and §3. Repository ownership must not be changed and no
+second repository should be created.
 
 ## 6. Deferred to Cloud 0.2
 
