@@ -4,6 +4,8 @@ import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, inject, it } from 'vitest';
 
 import { createMembershipStore } from './authorization/membership-store.js';
+import type { TenantContext } from './tenant/context.js';
+import { withTenantTransaction } from './tenant/with-tenant-transaction.js';
 import {
   createAuthorizationService,
   type AuthorizationService,
@@ -114,15 +116,21 @@ describe('creating an organization with a new administrator', () => {
   });
 
   it('makes the first membership an agency_admin reaching every client', async () => {
-    const rows = await database.provisioner.db.execute<{
-      role: string;
-      client_access_mode: string;
-    }>(
-      sql`SELECT role::text AS role, client_access_mode::text AS client_access_mode
-          FROM memberships WHERE id = ${result.membershipId}`,
+    // Read through the tenant path rather than with a bare provisioner query:
+    // `memberships` is tenant-scoped for the provisioning role too (migration 0002),
+    // so a query with no `app.current_org_id` correctly returns nothing. Reading it
+    // the way the application does also proves the row is reachable by the runtime.
+    const tenant: TenantContext = {
+      organizationId: result.organizationId,
+      actor: { kind: 'user', userId: result.userId },
+    };
+
+    const membership = await withTenantTransaction(database.runtime.db, tenant, async (r) =>
+      r.memberships.findById(result.membershipId),
     );
 
-    expect(rows.rows[0]).toEqual({ role: 'agency_admin', client_access_mode: 'all_clients' });
+    expect(membership?.role).toBe('agency_admin');
+    expect(membership?.clientAccessMode).toBe('all_clients');
   });
 
   it('grants no platform administration', async () => {
@@ -248,16 +256,32 @@ describe('atomicity', () => {
   });
 
   it('leaves no organization without an agency admin anywhere in the database', async () => {
-    const rows = await database.provisioner.db.execute<{ slug: string }>(
-      sql`SELECT o.slug::text AS slug
-          FROM organizations o
-          WHERE NOT EXISTS (
-            SELECT 1 FROM memberships m
-            WHERE m.organization_id = o.id AND m.role = 'agency_admin'
-          )`,
+    // Deliberately not one cross-organization query. `memberships` is tenant-scoped,
+    // so a single statement spanning every organization would read zero rows and
+    // report that *every* tenant is administrator-less — the isolation working, not
+    // the invariant failing. Each organization is therefore checked under its own
+    // tenant context, which is the only way the question can honestly be asked.
+    const organizations = await database.provisioner.db.execute<{ id: string; slug: string }>(
+      sql`SELECT id::text AS id, slug::text AS slug FROM organizations ORDER BY slug`,
     );
 
-    expect(rows.rows).toEqual([]);
+    expect(organizations.rows.length).toBeGreaterThan(0);
+
+    const withoutAdmin: string[] = [];
+
+    for (const organization of organizations.rows) {
+      const admins = await withTenantTransaction(
+        database.runtime.db,
+        { organizationId: organization.id, actor: { kind: 'system' } },
+        async (r) => (await r.memberships.list()).filter((row) => row.role === 'agency_admin'),
+      );
+
+      if (admins.length === 0) {
+        withoutAdmin.push(organization.slug);
+      }
+    }
+
+    expect(withoutAdmin).toEqual([]);
   });
 });
 

@@ -3,13 +3,14 @@ import {
   isMembershipAdministrationError,
   type AuthenticatedIdentityRef,
 } from '@organic-os/authorization';
-import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, inject, it } from 'vitest';
 
 import { createMembershipStore } from '../authorization/membership-store.js';
 import { createAuthorizationService } from '../authorization/with-authorized-organization.js';
 import { createDatabase, type DatabaseHandle } from '../client.js';
 import { provisionMembership, provisionOrganization, provisionUser } from '../provisioning.js';
+import type { TenantContext } from '../tenant/context.js';
+import { withTenantTransaction } from '../tenant/with-tenant-transaction.js';
 import { createTestDatabase, type TestDatabase } from '../testing/database.js';
 import {
   createMemberAdministrationService,
@@ -82,25 +83,42 @@ async function attempt(run: () => Promise<unknown>): Promise<Outcome> {
   }
 }
 
-async function agencyAdminCount(): Promise<number> {
-  const result = await concurrent.db.execute<{ admins: string }>(
-    sql`SELECT count(*)::text AS admins FROM memberships
-        WHERE organization_id = ${organizationId} AND role = 'agency_admin'`,
-  );
+/**
+ * `memberships` is tenant-scoped, so a bare statement with no `app.current_org_id`
+ * reads zero rows — the isolation working, not the organization being empty. Every
+ * fixture read and write here therefore goes through a tenant transaction, exactly as
+ * the application does. The actor is `system`: these are fixture operations, not
+ * something a user did, and they must keep working after a test removes a membership.
+ */
+function fixtureTenant(): TenantContext {
+  return { organizationId, actor: { kind: 'system' } };
+}
 
-  return Number(result.rows[0]?.admins ?? '-1');
+async function agencyAdminCount(): Promise<number> {
+  return withTenantTransaction(
+    concurrent.db,
+    fixtureTenant(),
+    async (r) => (await r.memberships.list()).filter((row) => row.role === 'agency_admin').length,
+  );
 }
 
 /** Restores the three administrators, without going through the service under test. */
 async function resetAdministrators(): Promise<void> {
-  await concurrent.db.execute(
-    sql`UPDATE memberships SET role = 'agency_admin'
-        WHERE organization_id = ${organizationId}
-          AND id IN (${adminA.membershipId}, ${adminB.membershipId}, ${adminC.membershipId})`,
-  );
-  await concurrent.db.execute(
-    sql`UPDATE memberships SET role = 'analyst'
-        WHERE organization_id = ${organizationId} AND id = ${bystander.membershipId}`,
+  await withTenantTransaction(concurrent.db, fixtureTenant(), async (r) => {
+    for (const membershipId of [adminA.membershipId, adminB.membershipId, adminC.membershipId]) {
+      await r.memberships.updateRole(membershipId, 'agency_admin');
+    }
+
+    await r.memberships.updateRole(bystander.membershipId, 'analyst');
+  });
+}
+
+/** The membership id a restored user now holds, read under the tenant context. */
+async function membershipIdOf(userId: string): Promise<string | undefined> {
+  return withTenantTransaction(
+    concurrent.db,
+    fixtureTenant(),
+    async (r) => (await r.memberships.findByUserId(userId))?.id,
   );
 }
 
@@ -292,11 +310,7 @@ describe('two administrators removing each other', () => {
       clientAccessMode: 'all_clients',
     });
 
-    const restored = await concurrent.db.execute<{ id: string }>(
-      sql`SELECT id::text AS id FROM memberships
-          WHERE organization_id = ${organizationId} AND user_id = ${removed.userId}`,
-    );
-    const restoredId = restored.rows[0]?.id;
+    const restoredId = await membershipIdOf(removed.userId);
     expect(restoredId).toBeDefined();
 
     if (removed === adminA) {
@@ -346,11 +360,10 @@ describe('a demotion racing a removal', () => {
         clientAccessMode: 'all_clients',
       });
 
-      const restored = await concurrent.db.execute<{ id: string }>(
-        sql`SELECT id::text AS id FROM memberships
-            WHERE organization_id = ${organizationId} AND user_id = ${adminA.userId}`,
-      );
-      adminA = { ...adminA, membershipId: restored.rows[0]?.id ?? adminA.membershipId };
+      adminA = {
+        ...adminA,
+        membershipId: (await membershipIdOf(adminA.userId)) ?? adminA.membershipId,
+      };
     }
   });
 });

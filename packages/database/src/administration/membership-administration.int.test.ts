@@ -481,13 +481,19 @@ async function findMembership(userId: string): Promise<string | null> {
 describe('changing a role', () => {
   beforeEach(async () => {
     // Reset the manager to a known state without going through the service.
+    //
+    // Order matters, and the database enforces it: `memberships_client_viewer_is_scoped`
+    // forbids a `client_viewer` from holding `all_clients`. A test that has just made
+    // the manager a client_viewer must therefore restore the *role* first — widening
+    // the access mode while the old role is still in place is exactly the state the
+    // CHECK exists to reject.
     await withTenantTransaction(
       database.runtime.db,
       tenantOf(fixture.orgA, fixture.adminOne),
       async (r) => {
+        await r.memberships.updateRole(fixture.manager.membershipId, 'seo_manager');
         await r.membershipClientScopes.deleteAllForMembership(fixture.manager.membershipId);
         await r.memberships.updateClientAccessMode(fixture.manager.membershipId, 'all_clients');
-        await r.memberships.updateRole(fixture.manager.membershipId, 'seo_manager');
       },
     );
   });
@@ -690,6 +696,9 @@ describe('replacing client scopes', () => {
       database.runtime.db,
       tenantOf(fixture.orgA, fixture.adminOne),
       async (r) => {
+        // Role first, for the same reason as the block above: a member left as a
+        // client_viewer by a previous test may not be widened while that role stands.
+        await r.memberships.updateRole(fixture.analyst.membershipId, 'analyst');
         await r.membershipClientScopes.deleteAllForMembership(fixture.analyst.membershipId);
         await r.memberships.updateClientAccessMode(fixture.analyst.membershipId, 'scoped');
         await r.membershipClientScopes.add({
