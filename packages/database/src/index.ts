@@ -242,6 +242,14 @@ export {
 
 export { checkDatabaseReady } from './readiness.js';
 
+/**
+ * Operator CLI plumbing. Exported so the API's `verify:e2e` command reads a password
+ * the same way `provision:organization` does — from a terminal with the echo off,
+ * never from argv or the environment (`src/cli/secret-prompt.ts`). Duplicating a
+ * credential-handling routine to avoid one export would be the worse trade.
+ */
+export { readSecretFromTty, type ReadSecretOptions } from './cli/secret-prompt.js';
+
 export { newId } from './ids.js';
 
 /**
