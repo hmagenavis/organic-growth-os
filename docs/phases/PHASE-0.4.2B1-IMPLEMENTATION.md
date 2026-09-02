@@ -464,7 +464,17 @@ None added, in any package.
    before state"; this is the reading of "safe" that matches the 0.4.2A precedent.
 3. **No 409 conflict mapping.** §12 asks for one *if* a unique field exists. None does
    (§9), and inventing one was explicitly out of scope.
-4. **`AdministrationRequest` is reused** as the audit-origin type rather than a new
+4. **One unrelated fix was required to reach a green gate.**
+   `packages/auth/src/csrf.test.ts` → "rejects a tampered signature" was flaky and
+   failed the first CI run of this branch. It tampered with the **last** character of
+   the signature; a 32-byte HMAC is 43 base64url characters whose final character
+   carries two unused padding bits, so about one run in sixteen the "tampered" token
+   decoded to identical bytes and was correctly accepted. The test now alters the first
+   character, which has no such slack. **`verifyCsrfToken` itself is unchanged and was
+   never wrong**: it compares decoded bytes, so a token differing only in padding bits
+   is the same token, and forging one still requires the HMAC. Verified with 30
+   consecutive local runs.
+5. **`AdministrationRequest` is reused** as the audit-origin type rather than a new
    near-identical `ClientRequest`, to avoid churn in 0.4.2A code. Its name is
    administration-flavoured; renaming it to something neutral is a candidate for the
    next sub-phase.
