@@ -1,5 +1,6 @@
 import {
   clientListResponseSchema,
+  currentUserSchema,
   memberListResponseSchema,
   clientResponseSchema,
   csrfTokenResponseSchema,
@@ -286,12 +287,10 @@ export async function runVerification(options: VerificationInput): Promise<boole
   record('POST /auth/login succeeds and issues a session', true, loginBody.data.user.email);
 
   const me = await go('/auth/me');
+  const meBody = currentUserSchema.safeParse(me.json);
   record(
     'GET /auth/me returns the signed-in user',
-    me.status === 200 &&
-      typeof me.json === 'object' &&
-      me.json !== null &&
-      (me.json as { user?: { id?: string } }).user?.id === loginBody.data.user.id,
+    me.status === 200 && meBody.success && meBody.data.id === loginBody.data.user.id,
     `status ${me.status}`,
   );
 

@@ -3,6 +3,7 @@ import {
   createAuthorizationService,
   createAuthStore,
   createClientService,
+  createMemberAdministrationService,
   createMembershipStore,
   createSiteService,
   provisionFirstOrganization,
@@ -69,6 +70,13 @@ beforeAll(async () => {
     serviceVersion: '0.0.0-test',
     auth: buildAuthDependencies({ store: createAuthStore(database.runtime.db), config }),
     authorization,
+    // Everything `apps/api/src/index.ts` wires, because the command checks the whole
+    // deployed surface and a route that is merely unwired answers 404 like a route
+    // that is broken.
+    memberAdministration: createMemberAdministrationService({
+      authorization,
+      db: database.runtime.db,
+    }),
     clients: createClientService({ authorization }),
     sites: createSiteService({ authorization }),
     checkReady: () => Promise.resolve(true),
