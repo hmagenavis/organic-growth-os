@@ -9,6 +9,14 @@ import {
 } from './clients.js';
 import { healthResponseSchema } from './health.js';
 import { PROBLEM_CONTENT_TYPE, problemDetailsSchema } from './problem.js';
+import {
+  createSiteRequestSchema,
+  SITE_PAGE_DEFAULT_LIMIT,
+  SITE_PAGE_MAX_LIMIT,
+  siteListQuerySchema,
+  siteSchema,
+  updateSiteRequestSchema,
+} from './sites.js';
 
 describe('healthResponseSchema', () => {
   it('accepts a well-formed health response', () => {
@@ -144,5 +152,137 @@ describe('updateClientRequestSchema', () => {
     { unknown: true },
   ])('rejects %j', (body) => {
     expect(updateClientRequestSchema.safeParse(body).success).toBe(false);
+  });
+});
+
+describe('siteListQuerySchema', () => {
+  it('defaults to the documented page size', () => {
+    const result = siteListQuerySchema.parse({});
+
+    expect(result.limit).toBe(SITE_PAGE_DEFAULT_LIMIT);
+    expect(result.cursor).toBeUndefined();
+  });
+
+  it('accepts the maximum limit as a query string value', () => {
+    expect(siteListQuerySchema.parse({ limit: String(SITE_PAGE_MAX_LIMIT) }).limit).toBe(
+      SITE_PAGE_MAX_LIMIT,
+    );
+  });
+
+  it.each(['101', '0', '-1', '1.5', 'ten', ''])('rejects limit=%s', (limit) => {
+    expect(siteListQuerySchema.safeParse({ limit }).success).toBe(false);
+  });
+
+  it('rejects an unknown parameter rather than ignoring it', () => {
+    expect(siteListQuerySchema.safeParse({ clientId: 'x' }).success).toBe(false);
+  });
+});
+
+describe('siteSchema', () => {
+  const site = {
+    id: '018f9e1a-0000-7000-8000-0000000000aa',
+    baseUrl: 'https://example.test',
+    cmsType: 'wordpress',
+    status: 'active',
+    timezone: 'UTC',
+    language: 'en',
+    autopilotMode: 'review',
+    createdAt: '2026-09-02T10:00:00.000Z',
+    updatedAt: '2026-09-02T10:00:00.000Z',
+  };
+
+  it('accepts a reported site', () => {
+    expect(siteSchema.safeParse(site).success).toBe(true);
+  });
+
+  it('accepts a null autopilot mode, which means no settings row exists', () => {
+    expect(siteSchema.safeParse({ ...site, autopilotMode: null }).success).toBe(true);
+  });
+
+  it.each(['off', 'review', 'safe_autopilot', 'full_autopilot'])(
+    'reports autopilot mode %s',
+    (autopilotMode) => {
+      expect(siteSchema.safeParse({ ...site, autopilotMode }).success).toBe(true);
+    },
+  );
+
+  it('rejects a cms type the schema does not support', () => {
+    expect(siteSchema.safeParse({ ...site, cmsType: 'shopify' }).success).toBe(false);
+  });
+});
+
+describe('createSiteRequestSchema', () => {
+  it('trims the base URL', () => {
+    expect(createSiteRequestSchema.parse({ baseUrl: '  https://example.test  ' }).baseUrl).toBe(
+      'https://example.test',
+    );
+  });
+
+  it('accepts the optional writable fields', () => {
+    expect(
+      createSiteRequestSchema.parse({
+        baseUrl: 'https://example.test',
+        timezone: 'Asia/Jerusalem',
+        language: 'he',
+      }),
+    ).toEqual({ baseUrl: 'https://example.test', timezone: 'Asia/Jerusalem', language: 'he' });
+  });
+
+  it.each([
+    {},
+    { baseUrl: '' },
+    { baseUrl: '   ' },
+    { baseUrl: 'https://example.test/a b' },
+    { baseUrl: `https://example.test/${'a'.repeat(2100)}` },
+    { baseUrl: 'https://example.test', organizationId: '018f9e1a-0000-7000-8000-0000000000ff' },
+    { baseUrl: 'https://example.test', clientId: '018f9e1a-0000-7000-8000-0000000000ff' },
+    { baseUrl: 'https://example.test', id: '018f9e1a-0000-7000-8000-0000000000ff' },
+    { baseUrl: 'https://example.test', autopilotMode: 'safe_autopilot' },
+    { baseUrl: 'https://example.test', status: 'archived' },
+    { baseUrl: 'https://example.test', cmsType: 'wordpress' },
+    { baseUrl: 'https://example.test', crawlBudget: {} },
+    { baseUrl: 'https://example.test', wordpressAppPassword: 'secret' },
+    { baseUrl: 'https://example.test', createdAt: '2026-01-01T00:00:00.000Z' },
+  ])('rejects %j', (body) => {
+    expect(createSiteRequestSchema.safeParse(body).success).toBe(false);
+  });
+
+  it('cannot be used to request an autopilot mode under any spelling', () => {
+    for (const key of ['autopilotMode', 'autopilot_mode', 'settings', 'siteSettings']) {
+      expect(
+        createSiteRequestSchema.safeParse({ baseUrl: 'https://example.test', [key]: 'x' }).success,
+      ).toBe(false);
+    }
+  });
+});
+
+describe('updateSiteRequestSchema', () => {
+  it('accepts a single writable field', () => {
+    expect(updateSiteRequestSchema.parse({ timezone: 'UTC' })).toEqual({ timezone: 'UTC' });
+  });
+
+  it('rejects an empty patch rather than treating it as a no-op', () => {
+    expect(updateSiteRequestSchema.safeParse({}).success).toBe(false);
+  });
+
+  it.each([
+    { id: '018f9e1a-0000-7000-8000-0000000000ff' },
+    { organizationId: '018f9e1a-0000-7000-8000-0000000000ff' },
+    { clientId: '018f9e1a-0000-7000-8000-0000000000ff' },
+    { createdAt: '2026-01-01T00:00:00.000Z' },
+    { updatedAt: '2026-01-01T00:00:00.000Z' },
+    { status: 'archived' },
+    { cmsType: 'wordpress' },
+    { autopilotMode: 'safe_autopilot' },
+    { siteSettings: { autopilotMode: 'review' } },
+    { graduationPolicy: {} },
+    { riskOverrides: {} },
+    { crawlBudget: {} },
+    { baseUrl: '' },
+    { baseUrl: null },
+    { timezone: null },
+    { unknown: true },
+  ])('rejects %j', (body) => {
+    expect(updateSiteRequestSchema.safeParse(body).success).toBe(false);
   });
 });

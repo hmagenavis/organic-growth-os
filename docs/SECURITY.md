@@ -122,6 +122,36 @@ API boundary AND at the execution engine for write actions):
   deliberately no client deletion and no `status` mutation: the archive/delete lifecycle
   cascades into sites, settings, scopes and future SEO history, and is designed in a
   later sub-phase.
+- **Site API** (sub-phase 0.4.2B2). A site is authorized through its **parent client**:
+  `authorized = site permission AND parent-client access`. There is no site-level scope
+  table and there will not be one — `membership_client_scopes` stays the single scope
+  authority, and a site is reachable exactly when its client is, so a `scoped` agency
+  admin cannot read, create or update a site under a client outside its scope. Route
+  nesting proves nothing on its own: a single site must additionally be shown to belong
+  to the authorized organization *and* to the named parent client, so a real site id
+  paired with a different client id answers with the same non-enumerating 404 as a site
+  that does not exist. `site.create` / `site.update` remain agency_admin only — the
+  written decision 0.4.2B1 asked for — because integration-management authority does
+  not imply authority over the structural Site resource. Listing reuses the client
+  collection's bounded keyset contract (default 50, maximum 100, `(created_at, id)`,
+  no total count). Writable fields are `base_url`, `timezone` and `language` only; a
+  site cannot be moved between clients, `status` is not writable (deferred archive
+  lifecycle), and there is no deletion.
+- **Every site starts in REVIEW, by system policy** (sub-phase 0.4.2B2,
+  docs/EXECUTION-SAFETY.md §3.1). Creating a site writes its `site_settings` row with
+  `autopilot_mode = 'review'` **in the same transaction**, so a committed site without
+  settings is not a reachable state. The request contract has no autopilot field and
+  rejects unknown keys, and the repository that creates the row takes no mode
+  parameter — a caller cannot create a site that begins in `safe_autopilot` and skips
+  the review period. Editing site settings is deliberately not exposed by any API in
+  Phase 0.4.2.
+- **Tenant audit for site mutations.** `site.created` and `site.updated` are written
+  inside the authorized tenant transaction, with actor ids from the *context*.
+  `before`/`after` hold `base_url`, `cms_type`, `status`, `timezone` and `language`;
+  creation additionally records the parent `clientId` and that `autopilot_mode = review`
+  was established by system policy rather than by caller input. `sites` holds no
+  credential or token, so nothing is withheld. A refused or failed mutation writes no
+  audit row.
 - **Tenant audit for client mutations.** `client.created` and `client.updated` are
   written inside the authorized tenant transaction, with actor ids from the *context*.
   `before`/`after` hold `name`, `status`, `industry` and a boolean for whether notes are

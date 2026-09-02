@@ -58,6 +58,25 @@ export {
   type UpdateMemberRoleRequestBody,
 } from './membership-administration.js';
 export {
+  AUTOPILOT_MODES,
+  SITE_PAGE_DEFAULT_LIMIT,
+  SITE_PAGE_MAX_LIMIT,
+  SITE_STATUSES,
+  createSiteRequestSchema,
+  siteListQuerySchema,
+  siteListResponseSchema,
+  sitePageSchema,
+  siteResponseSchema,
+  siteSchema,
+  updateSiteRequestSchema,
+  type CreateSiteRequestBody,
+  type Site,
+  type SiteListQuery,
+  type SiteListResponse,
+  type SiteResponse,
+  type UpdateSiteRequestBody,
+} from './sites.js';
+export {
   problemDetailsSchema,
   PROBLEM_CONTENT_TYPE,
   PROBLEM_TYPE_BASE_URL,

@@ -5,6 +5,7 @@ import { newId } from '../ids.js';
 import { clients, membershipClientScopes } from '../schema/index.js';
 import type { ClientStatus } from '../schema/enums.js';
 import type { TenantContext } from '../tenant/context.js';
+import { clampPageLimit, decodeKeysetCursor, encodeKeysetCursor } from './keyset.js';
 import { requireRow } from './util.js';
 
 export type ClientRecord = typeof clients.$inferSelect;
@@ -65,54 +66,6 @@ export function isInvalidClientCursorError(value: unknown): value is InvalidClie
 /** Hard ceiling independent of the HTTP contract, so no caller can ask for the table. */
 const MAX_PAGE_LIMIT = 100;
 
-interface CursorPosition {
-  /** `created_at` rendered by PostgreSQL, at full precision. See `encodeCursor`. */
-  readonly createdAt: string;
-  readonly id: string;
-}
-
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-/** `2026-09-02 11:22:33.123456+00` — PostgreSQL's own timestamptz text rendering. */
-const TIMESTAMP_PATTERN = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(\.\d{1,6})?[+-]\d{2}(:\d{2})?$/;
-
-/**
- * Encodes the position of the last row of a page.
- *
- * The timestamp is the value PostgreSQL rendered, not a JavaScript `Date`: a
- * `timestamptz` carries microseconds and a `Date` only milliseconds, so a cursor
- * built from a `Date` would round `12:00:00.000500` down to `12:00:00.000` and hand
- * the same row back on the next page. Round-tripping the database's own text keeps
- * the comparison exact.
- *
- * Base64url is encoding, not protection: the cursor holds the `created_at` and `id`
- * of a row the caller was just given, so there is nothing in it to protect. It is
- * opaque so the ordering can change later without breaking callers.
- */
-function encodeCursor(position: CursorPosition): string {
-  return Buffer.from(`${position.createdAt}|${position.id}`, 'utf8').toString('base64url');
-}
-
-/** @throws {InvalidClientCursorError} for anything this ordering cannot resume from. */
-function decodeCursor(cursor: string): CursorPosition {
-  const decoded = Buffer.from(cursor, 'base64url').toString('utf8');
-  const separator = decoded.lastIndexOf('|');
-
-  if (separator === -1) {
-    throw new InvalidClientCursorError();
-  }
-
-  const createdAt = decoded.slice(0, separator);
-  const id = decoded.slice(separator + 1);
-
-  // Both halves are bound as query parameters below, so this is not injection
-  // defence — it is refusing to turn caller-supplied text into a database error.
-  if (!TIMESTAMP_PATTERN.test(createdAt) || !UUID_PATTERN.test(id)) {
-    throw new InvalidClientCursorError();
-  }
-
-  return { createdAt, id };
-}
-
 export interface ClientRepository {
   create(input: CreateClientInput): Promise<ClientRecord>;
   list(): Promise<ClientRecord[]>;
@@ -172,8 +125,11 @@ export function createClientRepository(tx: Transaction, tenant: TenantContext): 
       access: ClientListAccess,
       page: ClientPageRequest,
     ): Promise<ClientPage> {
-      const limit = Math.min(Math.max(Math.trunc(page.limit), 1), MAX_PAGE_LIMIT);
-      const position = page.cursor === undefined ? null : decodeCursor(page.cursor);
+      const limit = clampPageLimit(page.limit, MAX_PAGE_LIMIT);
+      const position =
+        page.cursor === undefined
+          ? null
+          : decodeKeysetCursor(page.cursor, () => new InvalidClientCursorError());
 
       // Row-value comparison: exactly `(created_at, id) > (cursor)`, which is the
       // ordering itself rather than a hand-expanded approximation of it.
@@ -224,7 +180,7 @@ export function createClientRepository(tx: Transaction, tenant: TenantContext): 
         clients: visible.map((row) => row.client),
         nextCursor:
           hasMore && last !== undefined
-            ? encodeCursor({ createdAt: last.cursorCreatedAt, id: last.client.id })
+            ? encodeKeysetCursor({ createdAt: last.cursorCreatedAt, id: last.client.id })
             : null,
       };
     },

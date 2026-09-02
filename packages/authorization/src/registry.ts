@@ -45,9 +45,22 @@ import { ORGANIZATION_ROLES, type OrganizationRole } from './roles.js';
  * production is an incident. The `site.*` writes stay agency_admin only for the same
  * reason, until the sub-phase that builds the sites API.
  *
- * Note that neither 0.4.2A nor 0.4.2B1 changed any role's permissions, which is why
- * `PERMISSION_REGISTRY_VERSION` is unchanged: bumping it would claim a change that
- * did not happen.
+ * Sub-phase 0.4.2B2 built that API and **kept the rows exactly as they are**:
+ * `site.create` and `site.update` remain agency_admin only, and seo_manager,
+ * content_editor, analyst and client_viewer hold `site.read` alone. This is the
+ * written decision 0.4.2B1 §19.6 asked for. The argument for widening it was that
+ * seo_manager will manage a site's integrations under docs/SECURITY.md §3; the
+ * argument against, which won, is that authority over a *connection* does not imply
+ * authority over the structural resource the connection hangs off. Creating a site
+ * establishes a new tenant object with its own settings row and its own execution
+ * policy, and re-pointing a site's `base_url` re-points every future crawl, snapshot
+ * and published change at a different property. Neither is integration management.
+ * If the integration sub-phase needs seo_manager to act, the permission it needs is
+ * `integration.*`, not `site.update`.
+ *
+ * Note that none of 0.4.2A, 0.4.2B1 or 0.4.2B2 changed any role's permissions, which
+ * is why `PERMISSION_REGISTRY_VERSION` is unchanged: bumping it would claim a change
+ * that did not happen.
  *
  * ## Versioning
  *

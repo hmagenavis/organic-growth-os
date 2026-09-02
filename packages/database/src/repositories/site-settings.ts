@@ -27,7 +27,16 @@ export interface UpdateSiteSettingsInput {
 }
 
 export interface SiteSettingsRepository {
-  /** Creates the settings row for a site, defaulting autopilot mode to REVIEW. */
+  /**
+   * Creates the settings row for a site, in REVIEW.
+   *
+   * There is no autopilot-mode parameter, and there will not be one: a site that could
+   * be created directly in `safe_autopilot` would be a site that never passed through
+   * the review period the execution-safety model is built on
+   * (docs/EXECUTION-SAFETY.md §3.1). The mode is written explicitly rather than left
+   * to the column default so the invariant is visible in the code that establishes it
+   * and does not depend on migration 0001 keeping that default.
+   */
   createForSite(siteId: string): Promise<SiteSettingsRecord>;
   findBySiteId(siteId: string): Promise<SiteSettingsRecord | null>;
   update(siteId: string, patch: UpdateSiteSettingsInput): Promise<SiteSettingsRecord | null>;
@@ -47,6 +56,7 @@ export function createSiteSettingsRepository(
           id: newId(),
           organizationId: tenant.organizationId,
           siteId,
+          autopilotMode: 'review',
         })
         .returning();
 

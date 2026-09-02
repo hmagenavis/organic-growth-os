@@ -8,6 +8,7 @@ import {
   createDatabase,
   createMemberAdministrationService,
   createMembershipStore,
+  createSiteService,
   parseDatabaseEnv,
   runtimeDatabaseEnvSchema,
   describeConnection,
@@ -86,6 +87,11 @@ async function main(): Promise<void> {
     // inside `withAuthorizedOrganization`, which owns the transaction and the tenant
     // context.
     clients: createClientService({ authorization }),
+    // Sites, authorized through their parent client. Like the client service it needs
+    // no pool of its own: every operation runs inside `withAuthorizedOrganization`,
+    // which owns the transaction and the tenant context — and which is what makes a
+    // site and its initial `site_settings` row one commit.
+    sites: createSiteService({ authorization }),
     // Readiness, not liveness: a database outage must stop traffic being routed here
     // without the platform restarting a process that is otherwise fine.
     checkReady: () => checkDatabaseReady(database.db),

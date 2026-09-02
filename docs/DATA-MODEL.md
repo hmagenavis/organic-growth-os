@@ -125,6 +125,21 @@ Notes:
   Phase-0.2 convention in which an empty `membership_client_scopes` collection meant
   "all clients". The column is `NOT NULL` with no default, so a membership cannot be
   created without a deliberate decision (ADR-0016).
+- **A site is never committed without settings** (sub-phase 0.4.2B2). `SiteService`
+  inserts the `site_settings` row in the same transaction as the `sites` row, with
+  `autopilot_mode = 'review'` written explicitly rather than left to the column
+  default, and `site_settings.site_id` is `UNIQUE` with a composite foreign key to
+  `sites (id, organization_id)` — so "exactly one settings row, owned by the same
+  organization" is a database property and not an application convention. Ownership by
+  the parent *client* is transitive: `sites` is pinned to its client by
+  `FOREIGN KEY (client_id, organization_id)`. This needed no migration.
+- **`sites` has one business key.** `UNIQUE (organization_id, base_url)` is the
+  concurrency authority for site creation — never a preflight `SELECT` — which is why
+  the base URL is normalized deterministically before it is stored or compared
+  (scheme/host lowercased, default port and trailing slashes dropped, credentials,
+  query and fragment refused). The constraint is organization-wide rather than
+  per-client, so a conflict can involve a client the caller cannot reach; the API
+  answers `409` naming no client, site or id.
 - **Membership bootstrap.** `memberships` and `organizations` each carry one extra
   permissive SELECT policy for the runtime role, keyed on the transaction-local
   `app.authz_user_id` and inert whenever `app.current_org_id` is set. It lets an

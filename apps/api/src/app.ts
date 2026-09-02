@@ -4,6 +4,7 @@ import type {
   AuthorizationService,
   ClientService,
   MemberAdministrationService,
+  SiteService,
 } from '@organic-os/database';
 import type { Logger } from '@organic-os/observability';
 import Fastify, { type FastifyInstance } from 'fastify';
@@ -15,6 +16,7 @@ import { registerAuthRoutes } from './auth/routes.js';
 import { registerAuthorizationRoutes } from './authorization/routes.js';
 import { registerClientRoutes } from './clients/routes.js';
 import { registerErrorHandlers } from './errors.js';
+import { registerSiteRoutes } from './sites/routes.js';
 import { registerHealthRoute } from './routes/health.js';
 
 export interface BuildAppOptions {
@@ -51,6 +53,14 @@ export interface BuildAppOptions {
    */
   clients?: ClientService;
   /**
+   * Site API wiring. Requires `auth` and `authorization`, and is registered
+   * independently of `clients`: a site is authorized through its parent client, but
+   * serving the client routes and serving the site routes are separate grants, and a
+   * deployment that omits this serves no site route at all rather than an unguarded
+   * one.
+   */
+  sites?: SiteService;
+  /**
    * Dependency probe backing `GET /health/ready`. Absent means the deployment has no
    * dependency to be ready for, and readiness reduces to liveness.
    */
@@ -73,6 +83,7 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
     authorization,
     memberAdministration,
     clients,
+    sites,
     checkReady,
   } = options;
 
@@ -128,6 +139,10 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
 
       if (clients !== undefined) {
         registerClientRoutes(app, { clients, logger });
+      }
+
+      if (sites !== undefined) {
+        registerSiteRoutes(app, { sites, logger });
       }
     }
   }
