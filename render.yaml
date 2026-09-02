@@ -83,17 +83,20 @@ services:
       - key: API_TRUST_PROXY
         value: uniquelocal
 
+      # Reported by /health and /health/ready. A literal, so which version is deployed
+      # is answerable from a diff rather than from a dashboard.
+      - key: SERVICE_VERSION
+        value: 0.2.0-staging
+
       # ---- Values entered in the Render dashboard, never in this file ------------
       # `sync: false` means Render prompts for the value and stores it in the service's
       # own environment. Nothing here is readable from the repository or from a build
       # log.
 
-      # The exact origin of the web deployment. No wildcard is accepted.
+      # The exact origin of the web deployment — one origin, no wildcard. It is not a
+      # secret; it is here rather than as a literal only because the domain is chosen
+      # at deployment time.
       - key: CORS_ALLOWED_ORIGINS
-        sync: false
-
-      # Reported by /health and /health/ready.
-      - key: SERVICE_VERSION
         sync: false
 
       # The runtime role only: no DDL, no BYPASSRLS, no INSERT on organizations or

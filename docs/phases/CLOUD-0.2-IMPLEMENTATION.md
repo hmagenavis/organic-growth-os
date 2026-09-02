@@ -179,15 +179,31 @@ Redis is explicitly out of scope for this phase.
 
 ### Repository
 
-| Gate | Result |
-|---|---|
-| `pnpm format:check` | pass |
-| `pnpm lint` | pass |
-| `pnpm typecheck` | pass |
-| `pnpm test` (unit) | pass |
-| `pnpm build` | pass |
-| GitHub CI (incl. integration on real PostgreSQL, `pnpm audit --audit-level critical`) | see §10 |
-| GitHub "API container" workflow | see §10 |
+| Gate | Where | Result |
+|---|---|---|
+| `pnpm format:check` | local | pass |
+| `pnpm lint` | local | pass |
+| `pnpm typecheck` | local | pass |
+| `pnpm test` (unit) | local | pass |
+| `pnpm build` | local | pass |
+| CI: format, lint, typecheck, unit, **integration on real PostgreSQL**, build, `pnpm audit --audit-level critical` | run `33676303739` | **green** |
+| API container: build, non-root, no `.env` in the image, root CA present, liveness without a database, readiness failing safely, CORS grant and refusal, no secret in the logs, SIGTERM draining | run `33676303827` | **green** |
+
+The container workflow's assertions are the deployment-readiness gate, and they are
+assertions rather than a smoke test that would pass on a broken image: the readiness
+step requires a **503** whose body mentions no host, port, role or driver error; the
+CORS step requires a 403 preflight from an unlisted origin and no wildcard anywhere;
+the SIGTERM step requires exit code 0 in under 20 seconds with `shutdown complete` in
+the log, so a container that ignored the signal and was killed at the deadline (137)
+fails.
+
+### One thing the container workflow found
+
+The first run failed at `pnpm install --prod`:
+`ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY`. Switching an existing install to `--prod`
+rebuilds the modules directory and pnpm refuses to do that unattended. `CI=true` is set
+on the build stage only, so the flag does not travel into the runtime image. Trivial,
+and exactly the class of thing that is better found here than on first deploy.
 
 ### Deployment
 
@@ -208,10 +224,10 @@ through a chat message.
 2. **A Render account and the service**, created from `render.yaml`. Billing approval
    for one Starter instance; the free instance type spins down and would break both the
    readiness contract and the single-always-on-instance property §7 depends on.
-3. **Four secret values entered in Render**, by name: `DATABASE_URL`,
-   `AUTH_SESSION_SECRET`, `CORS_ALLOWED_ORIGINS`, `SERVICE_VERSION`. The session secret
-   is generated for this service and used nowhere else; it appears in no document and no
-   commit.
+3. **Three values entered in Render**, by name: `DATABASE_URL`, `AUTH_SESSION_SECRET`
+   and `CORS_ALLOWED_ORIGINS`. Everything else in the service is a literal in
+   `render.yaml` and therefore reviewable in a diff. The session secret is generated for
+   this service and used nowhere else; it appears in no document and no commit.
 4. **`NEXT_PUBLIC_API_BASE_URL` on Vercel.**
 5. **`pnpm provision:organization`**, to create the first staging organization and its
    `agency_admin`. Staging currently holds zero organizations, zero users and zero
