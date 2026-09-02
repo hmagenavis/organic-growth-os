@@ -55,7 +55,21 @@ export type {
   SiteSettingsRepository,
 };
 export type { AppendAuditLogInput, AuditLogRecord } from './audit-logs.js';
-export type { ClientRecord, CreateClientInput, UpdateClientInput } from './clients.js';
+export { InvalidClientCursorError, isInvalidClientCursorError } from './clients.js';
+export {
+  InvalidSiteCursorError,
+  isInvalidSiteCursorError,
+  isSiteBaseUrlConflictError,
+  SiteBaseUrlConflictError,
+} from './sites.js';
+export type {
+  ClientListAccess,
+  ClientPage,
+  ClientPageRequest,
+  ClientRecord,
+  CreateClientInput,
+  UpdateClientInput,
+} from './clients.js';
 export type {
   AddMembershipClientScopeInput,
   MembershipClientScopeRecord,
@@ -63,4 +77,11 @@ export type {
 export type { CreateMembershipInput, MembershipRecord, MembershipWithUser } from './memberships.js';
 export type { OrganizationRecord, UpdateOrganizationInput } from './organizations.js';
 export type { SiteSettingsRecord, UpdateSiteSettingsInput } from './site-settings.js';
-export type { CreateSiteInput, SiteRecord, UpdateSiteInput } from './sites.js';
+export type {
+  CreateSiteInput,
+  SitePage,
+  SitePageRequest,
+  SiteRecord,
+  SiteWithSettings,
+  UpdateSiteInput,
+} from './sites.js';

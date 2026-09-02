@@ -19,6 +19,23 @@ export {
   type OrganizationResponse,
 } from './authorization.js';
 export {
+  CLIENT_PAGE_DEFAULT_LIMIT,
+  CLIENT_PAGE_MAX_LIMIT,
+  clientListQuerySchema,
+  clientListResponseSchema,
+  clientPageSchema,
+  clientResponseSchema,
+  clientSchema,
+  createClientRequestSchema,
+  updateClientRequestSchema,
+  type Client,
+  type ClientListQuery,
+  type ClientListResponse,
+  type ClientResponse,
+  type CreateClientRequestBody,
+  type UpdateClientRequestBody,
+} from './clients.js';
+export {
   healthResponseSchema,
   readinessResponseSchema,
   type HealthResponse,
@@ -40,6 +57,25 @@ export {
   type ReplaceMemberScopesRequestBody,
   type UpdateMemberRoleRequestBody,
 } from './membership-administration.js';
+export {
+  AUTOPILOT_MODES,
+  SITE_PAGE_DEFAULT_LIMIT,
+  SITE_PAGE_MAX_LIMIT,
+  SITE_STATUSES,
+  createSiteRequestSchema,
+  siteListQuerySchema,
+  siteListResponseSchema,
+  sitePageSchema,
+  siteResponseSchema,
+  siteSchema,
+  updateSiteRequestSchema,
+  type CreateSiteRequestBody,
+  type Site,
+  type SiteListQuery,
+  type SiteListResponse,
+  type SiteResponse,
+  type UpdateSiteRequestBody,
+} from './sites.js';
 export {
   problemDetailsSchema,
   PROBLEM_CONTENT_TYPE,

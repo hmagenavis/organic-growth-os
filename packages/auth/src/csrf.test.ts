@@ -119,7 +119,13 @@ describe('CSRF verification', () => {
   it('rejects a tampered signature', () => {
     const token = issueCsrfToken(SECRET, SESSION);
     const [nonce, signature = ''] = token.split('.');
-    const tampered = `${String(nonce)}.${signature.slice(0, -1)}${signature.endsWith('A') ? 'B' : 'A'}`;
+    // The *first* character, not the last. A 32-byte HMAC is 43 base64url
+    // characters, and the final character carries two unused padding bits — so
+    // altering it can produce a different string that decodes to the identical
+    // bytes, which `verifyCsrfToken` rightly accepts. Tampering there made this
+    // test fail roughly one run in sixteen. The leading character has no such
+    // slack: changing it always changes byte 0.
+    const tampered = `${String(nonce)}.${signature.startsWith('A') ? 'B' : 'A'}${signature.slice(1)}`;
 
     expect(verify({ cookieToken: tampered, requestToken: tampered })).toBe('invalid_signature');
   });

@@ -34,13 +34,33 @@ import { ORGANIZATION_ROLES, type OrganizationRole } from './roles.js';
  * Sub-phase 0.4.2A closed one of the two open questions from
  * docs/phases/PHASE-0.4.1-IMPLEMENTATION.md §4: **`member.read` stays agency_admin
  * only**, because the member list is administrative data rather than a directory, and
- * every `member.*` mutation is agency_admin only alongside it. The other question —
- * whether seo_manager should hold the `client.*` / `site.*` write permissions — is
- * still open and belongs to 0.4.2B, the sub-phase that builds those endpoints.
+ * every `member.*` mutation is agency_admin only alongside it.
  *
- * Note that 0.4.2A therefore changed no role's permissions, which is why
- * `PERMISSION_REGISTRY_VERSION` is unchanged: bumping it would claim a change that
- * did not happen.
+ * Sub-phase 0.4.2B1 closed the other one, conservatively: **`client.create` and
+ * `client.update` stay agency_admin only**, and every other role holds `client.read`
+ * alone. seo_manager does not get client writes yet. The endpoints that consume these
+ * permissions now exist, so the decision is testable rather than hypothetical, and
+ * widening it later is a one-line change with a table-driven test behind it —
+ * whereas shipping a write permission nobody asked for and discovering it in
+ * production is an incident. The `site.*` writes stay agency_admin only for the same
+ * reason, until the sub-phase that builds the sites API.
+ *
+ * Sub-phase 0.4.2B2 built that API and **kept the rows exactly as they are**:
+ * `site.create` and `site.update` remain agency_admin only, and seo_manager,
+ * content_editor, analyst and client_viewer hold `site.read` alone. This is the
+ * written decision 0.4.2B1 §19.6 asked for. The argument for widening it was that
+ * seo_manager will manage a site's integrations under docs/SECURITY.md §3; the
+ * argument against, which won, is that authority over a *connection* does not imply
+ * authority over the structural resource the connection hangs off. Creating a site
+ * establishes a new tenant object with its own settings row and its own execution
+ * policy, and re-pointing a site's `base_url` re-points every future crawl, snapshot
+ * and published change at a different property. Neither is integration management.
+ * If the integration sub-phase needs seo_manager to act, the permission it needs is
+ * `integration.*`, not `site.update`.
+ *
+ * Note that none of 0.4.2A, 0.4.2B1 or 0.4.2B2 changed any role's permissions, which
+ * is why `PERMISSION_REGISTRY_VERSION` is unchanged: bumping it would claim a change
+ * that did not happen.
  *
  * ## Versioning
  *

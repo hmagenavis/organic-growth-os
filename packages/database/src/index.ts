@@ -25,11 +25,23 @@ export {
 
 export { withTenantTransaction } from './tenant/with-tenant-transaction.js';
 
+export { InvalidClientCursorError, isInvalidClientCursorError } from './repositories/index.js';
+
+export {
+  InvalidSiteCursorError,
+  isInvalidSiteCursorError,
+  isSiteBaseUrlConflictError,
+  SiteBaseUrlConflictError,
+} from './repositories/index.js';
+
 export type {
   AddMembershipClientScopeInput,
   AppendAuditLogInput,
   AuditLogRecord,
   AuditLogRepository,
+  ClientListAccess,
+  ClientPage,
+  ClientPageRequest,
   ClientRecord,
   ClientRepository,
   CreateClientInput,
@@ -42,10 +54,13 @@ export type {
   MembershipWithUser,
   OrganizationRecord,
   OrganizationRepository,
+  SitePage,
+  SitePageRequest,
   SiteRecord,
   SiteRepository,
   SiteSettingsRecord,
   SiteSettingsRepository,
+  SiteWithSettings,
   TenantRepositories,
   UpdateClientInput,
   UpdateOrganizationInput,
@@ -85,6 +100,51 @@ export {
   type RemoveMemberInput,
   type ReplaceMemberScopesInput,
 } from './administration/membership-administration.js';
+
+/**
+ * Clients (Phase 0.4.2B1). The first tenant business resource with an API: read is
+ * role permission AND client scope, writes are `agency_admin` AND scope, and the
+ * mutation and its audit row commit together inside the authorized transaction.
+ */
+export {
+  createClientService,
+  type ClientListResult,
+  type ClientService,
+  type ClientServiceOptions,
+  type ClientView,
+  type CreateClientRequest,
+  type ListClientsQuery,
+  type UpdateClientPatch,
+} from './clients/client-service.js';
+
+/**
+ * Sites (Phase 0.4.2B2). Authorization is the site permission AND the parent client's
+ * access scope — there is no site-level scope system — and a created site gets its
+ * `site_settings` row, in `review`, inside the same transaction as the insert and its
+ * audit record.
+ */
+export {
+  createSiteService,
+  type CreateSiteRequest,
+  type ListSitesQuery,
+  type SiteListResult,
+  type SiteService,
+  type SiteServiceOptions,
+  type SiteView,
+  type UpdateSitePatch,
+} from './sites/site-service.js';
+
+export {
+  isSiteInputError,
+  normalizeBaseUrl,
+  normalizeLanguage,
+  normalizeTimezone,
+  SITE_BASE_URL_MAX_LENGTH,
+  SITE_LANGUAGE_MAX_LENGTH,
+  SITE_TIMEZONE_MAX_LENGTH,
+  SiteInputError,
+  type SiteInputField,
+} from './sites/normalize.js';
 
 export type {
   AuditActorKind,
