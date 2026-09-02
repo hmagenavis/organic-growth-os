@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
+import type { TrustProxyConfig } from '@organic-os/config/server';
 import type {
   AuthorizationService,
   ClientService,
@@ -16,6 +17,7 @@ import { registerAuthRoutes } from './auth/routes.js';
 import { registerAuthorizationRoutes } from './authorization/routes.js';
 import { registerClientRoutes } from './clients/routes.js';
 import { registerErrorHandlers } from './errors.js';
+import { registerCors, type CorsPolicy } from './http/cors.js';
 import { registerSiteRoutes } from './sites/routes.js';
 import { registerHealthRoute } from './routes/health.js';
 
@@ -65,14 +67,31 @@ export interface BuildAppOptions {
    * dependency to be ready for, and readiness reduces to liveness.
    */
   checkReady?: () => Promise<boolean>;
+  /**
+   * Cross-origin policy. Absent means no cross-origin grant at all, which is the
+   * correct value for a same-origin deployment (`./http/cors.ts`).
+   */
+  cors?: CorsPolicy;
+  /**
+   * What sits in front of this process. Defaults to `false`: `request.ip` is the
+   * socket peer, so it cannot be forged with a header, which is what makes it usable
+   * as the login rate-limit key and as `sessions.ip`.
+   *
+   * A proxied deployment must name the addresses it sits behind. `parseTrustProxy`
+   * refuses both the blanket `true` and a hop count, the latter because Fastify
+   * silently enforces nothing for it (docs/cloud/API-STAGING.md §5).
+   */
+  trustProxy?: TrustProxyConfig;
 }
 
 /**
  * Builds the API instance.
  *
- * No CORS is configured: the dashboard is served same-origin or through an explicit
- * gateway, and a permissive cross-origin policy would undermine cookie-based sessions
- * (docs/ADR/0013, docs/SECURITY.md §8).
+ * Every cross-cutting concern is opt-in and off by default, so a deployment that does
+ * not wire something serves nothing for it rather than an unguarded version: no
+ * `auth` means no `/auth/*` route, no `cors` means no cross-origin grant, and no
+ * `trustProxy` means `request.ip` is the socket peer (docs/ADR/0013,
+ * docs/SECURITY.md §8).
  */
 export function buildApp(options: BuildAppOptions): FastifyInstance {
   const {
@@ -85,6 +104,8 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
     clients,
     sites,
     checkReady,
+    cors,
+    trustProxy = false,
   } = options;
 
   const app = Fastify({
@@ -92,10 +113,13 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
     // and pass through the redacting logger.
     logger: false,
     genReqId: () => randomUUID(),
-    // The socket peer is the only address we trust. A proxied deployment must opt in
-    // explicitly; until then `request.ip` cannot be forged with a header, which is
-    // what makes it usable as a rate-limit key.
-    trustProxy: false,
+    // The socket peer unless the deployment names the proxies in front of it.
+    // `x-forwarded-for` is believed only as far as that boundary reaches, because
+    // `request.ip` is the login rate-limit key and the address recorded on every
+    // session. The list is passed in Fastify's comma-separated string form; Fastify
+    // enforces an address list and silently ignores a hop count, which is why
+    // `parseTrustProxy` refuses one.
+    trustProxy: trustProxy === false ? false : trustProxy.join(','),
     bodyLimit: 1_048_576,
   });
 
@@ -103,6 +127,12 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
     reply.header('x-content-type-options', 'nosniff');
     done();
   });
+
+  // Before authentication: a preflight is answered without resolving a session, and
+  // an unlisted origin is refused before any dependency is touched.
+  if (cors !== undefined) {
+    registerCors(app, { policy: cors, logger });
+  }
 
   app.addHook('onResponse', (request, reply, done) => {
     logger.info(
@@ -112,6 +142,10 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
         url: request.url,
         statusCode: reply.statusCode,
         durationMs: Math.round(reply.elapsedTime),
+        // The address as resolved through the configured trust boundary. It is what
+        // the login rate limiter counts against, so a security log that omitted it
+        // could not be used to check the boundary is the one that was intended.
+        ip: request.ip,
       },
       'request completed',
     );

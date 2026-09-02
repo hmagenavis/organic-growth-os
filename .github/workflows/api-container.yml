@@ -1,0 +1,165 @@
+name: API container
+
+# Builds the image the staging service runs from, and proves the properties a hosting
+# platform depends on — before any hosting platform is asked to run it.
+#
+# It holds no credential of any kind. The database it points the container at does not
+# exist, and that is the point: liveness must not depend on a database, readiness must
+# fail *safely* when one is unreachable, and neither answer may name a host, a role or
+# an error (docs/SECURITY.md §8).
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: api-container-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  container:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    env:
+      IMAGE: organic-os-api:ci
+      # Throwaway, generated per run, and never a value any environment uses. It exists
+      # only because `createAuthConfig` fails closed without one.
+      PORT: '8081'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the image
+        run: docker build -f apps/api/Dockerfile -t "$IMAGE" .
+
+      - name: The image runs as a non-root user
+        run: |
+          user="$(docker run --rm --entrypoint sh "$IMAGE" -c 'id -un')"
+          echo "runtime user: $user"
+          test "$user" = 'node'
+
+      - name: The image contains no environment file
+        run: |
+          # `.dockerignore` is what keeps a developer's `.env.api.local` out of the
+          # build context. Assert the outcome rather than trusting the file.
+          found="$(docker run --rm --entrypoint sh "$IMAGE" -c \
+            'find /repo -name ".env*" -not -path "*/node_modules/*" 2>/dev/null | head -20')"
+          if [ -n "$found" ]; then
+            echo "unexpected environment files in the image:"
+            echo "$found"
+            exit 1
+          fi
+
+      - name: The published root certificate is present
+        run: docker run --rm --entrypoint sh "$IMAGE" -c 'test -f /repo/certs/supabase-prod-ca-2021.crt'
+
+      - name: Start the container with an unreachable database
+        run: |
+          docker run -d --name api \
+            -p "127.0.0.1:${PORT}:${PORT}" \
+            -e NODE_ENV=production \
+            -e LOG_LEVEL=info \
+            -e SERVICE_VERSION=0.0.0-ci \
+            -e API_HOST=0.0.0.0 \
+            -e PORT="${PORT}" \
+            -e AUTH_SESSION_SECRET="$(openssl rand -base64 48)" \
+            -e API_TRUST_PROXY=uniquelocal \
+            -e CORS_ALLOWED_ORIGINS=https://web.example.test \
+            -e DATABASE_URL=postgres://organic_os_runtime:unused@127.0.0.1:5432/postgres \
+            -e DATABASE_MAX_CONNECTIONS=5 \
+            "$IMAGE"
+
+          # `PORT` rather than `API_PORT`, deliberately: this is the variable Render,
+          # Railway and Fly inject, and the fallback that reads it is why the image
+          # needs no per-platform entrypoint.
+          for _ in $(seq 1 30); do
+            if curl -fsS "http://127.0.0.1:${PORT}/health" >/dev/null 2>&1; then
+              exit 0
+            fi
+            sleep 1
+          done
+
+          echo 'the container never became live'
+          docker logs api
+          exit 1
+
+      - name: Liveness is green without a database
+        run: |
+          body="$(curl -fsS "http://127.0.0.1:${PORT}/health")"
+          echo "$body"
+          echo "$body" | grep -q '"status":"ok"'
+          echo "$body" | grep -q '"version":"0.0.0-ci"'
+
+      - name: Readiness fails safely, and says nothing about why
+        run: |
+          status="$(curl -s -o /tmp/ready.json -w '%{http_code}' "http://127.0.0.1:${PORT}/health/ready")"
+          body="$(cat /tmp/ready.json)"
+          echo "$status $body"
+          test "$status" = '503'
+          echo "$body" | grep -q '"status":"not_ready"'
+          # No host, no port, no role, no driver error, no stack.
+          for leak in 127.0.0.1 5432 postgres organic_os_runtime ECONNREFUSED stack; do
+            if echo "$body" | grep -qi -- "$leak"; then
+              echo "readiness response leaked: $leak"
+              exit 1
+            fi
+          done
+
+      - name: An allowed origin is granted; an unlisted one is not
+        run: |
+          allowed="$(curl -s -D - -o /dev/null -H 'origin: https://web.example.test' \
+            "http://127.0.0.1:${PORT}/health" | tr -d '\r')"
+          echo "$allowed"
+          echo "$allowed" | grep -qi '^access-control-allow-origin: https://web.example.test$'
+          echo "$allowed" | grep -qi '^access-control-allow-credentials: true$'
+          if echo "$allowed" | grep -qi 'access-control-allow-origin: \*'; then
+            echo 'the API answered with a wildcard origin'
+            exit 1
+          fi
+
+          refused="$(curl -s -o /dev/null -w '%{http_code}' -X OPTIONS \
+            -H 'origin: https://attacker.example.test' \
+            -H 'access-control-request-method: POST' \
+            "http://127.0.0.1:${PORT}/health")"
+          echo "preflight from an unlisted origin: $refused"
+          test "$refused" = '403'
+
+      - name: No route reports a secret, and the logs carry none
+        run: |
+          logs="$(docker logs api 2>&1)"
+          echo "$logs"
+          for leak in AUTH_SESSION_SECRET password Cookie csrf unused; do
+            if echo "$logs" | grep -qi -- "$leak"; then
+              echo "logs mentioned: $leak"
+              exit 1
+            fi
+          done
+          # The connection target is logged as host/port/database only, never as a URL.
+          if echo "$logs" | grep -q 'postgres://'; then
+            echo 'logs contained a connection string'
+            exit 1
+          fi
+
+      - name: SIGTERM drains the process rather than killing it
+        run: |
+          start="$(date +%s)"
+          docker stop -t 30 api >/dev/null
+          elapsed="$(( $(date +%s) - start ))"
+          code="$(docker inspect -f '{{.State.ExitCode}}' api)"
+          echo "stopped in ${elapsed}s with exit code ${code}"
+          docker logs api 2>&1 | tail -5
+          # A container that ignored SIGTERM would be killed at the 30 s deadline and
+          # would exit 137.
+          test "$elapsed" -lt 20
+          test "$code" = '0'
+          docker logs api 2>&1 | grep -q 'shutdown complete'
+
+      - name: Clean up
+        if: always()
+        run: docker rm -f api >/dev/null 2>&1 || true

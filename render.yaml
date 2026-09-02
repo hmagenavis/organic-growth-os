@@ -1,0 +1,108 @@
+# Render Blueprint for the staging API.
+#
+# Checked in so the service definition is reviewable in a diff rather than living only
+# in a dashboard — the same reason `apps/web/vercel.json` exists.
+#
+# **No secret is in this file, and none may ever be added to it.** Every credential is
+# declared with `sync: false`, which tells Render the value is entered in the service's
+# own environment and is never read from the repository
+# (docs/cloud/ENVIRONMENT-MATRIX.md).
+#
+# Three settings below are security decisions rather than defaults, and each is
+# explained where it appears: `numInstances`, `previewsEnabled` and `API_TRUST_PROXY`.
+
+services:
+  - type: web
+    name: organic-os-api-staging
+    runtime: docker
+    # Frankfurt, because the Supabase project is `eu-central-1`. The API holds a
+    # long-lived pool and every authorized request is a transaction, so round-trip
+    # latency to the database is paid many times per request.
+    region: frankfurt
+    plan: starter
+    dockerfilePath: ./apps/api/Dockerfile
+    dockerContext: .
+
+    branch: main
+    autoDeploy: true
+
+    # Pull-request previews are off. A preview environment would need this service's
+    # environment to be useful, and that environment holds the staging runtime database
+    # credential and the session secret — so any contributor's branch would receive
+    # both. Preview data belongs on an isolated database (Supabase branching), never on
+    # shared staging (docs/cloud/CLOUD-ARCHITECTURE.md §5).
+    previewsEnabled: false
+
+    # Exactly one instance, and this is load-bearing rather than thrift: the login rate
+    # limiter is in-memory (`packages/auth/src/rate-limit/memory.ts`). One instance
+    # means it behaves exactly as designed. Two would mean two independent limiters,
+    # each counting a fraction of the attempts, with no shared store to fix it until a
+    # later phase (docs/cloud/API-STAGING.md §8).
+    numInstances: 1
+
+    # Readiness, not liveness: a deploy is promoted only once the new instance can
+    # actually reach the database over verified TLS. A build that starts but cannot
+    # serve must not replace one that can.
+    healthCheckPath: /health/ready
+
+    envVars:
+      # ---- Non-secret runtime configuration -------------------------------------
+      - key: NODE_ENV
+        value: production
+      - key: LOG_LEVEL
+        value: info
+      - key: API_HOST
+        value: 0.0.0.0
+      # API_PORT is deliberately absent. Render injects PORT and routes to it, and the
+      # configuration falls back to it (`packages/config/src/server.ts`). Setting
+      # API_PORT here would win over PORT and leave the service listening where nothing
+      # routes.
+
+      # The published Supabase root CA, shipped in the image. It is what makes the
+      # database connection `verify-full` rather than merely encrypted, and its absence
+      # refuses the connection rather than downgrading it. A root certificate is public
+      # by construction — a variable, never a secret.
+      - key: DATABASE_SSL_ROOT_CERT
+        value: /repo/certs/supabase-prod-ca-2021.crt
+
+      # Conservative, and deliberately so: one instance behind Supavisor. A large
+      # client-side pool multiplied by instances is how a shared staging database runs
+      # out of connections (docs/cloud/API-STAGING.md §4).
+      - key: DATABASE_MAX_CONNECTIONS
+        value: '5'
+      - key: DATABASE_STATEMENT_TIMEOUT_MS
+        value: '30000'
+      - key: DATABASE_IDLE_TX_TIMEOUT_MS
+        value: '15000'
+
+      # Trust the peer only when it is inside private address space, which on Render is
+      # the platform's own load balancer and which no internet client can be. A hop
+      # count is refused by `parseTrustProxy` because fastify@5 enforces nothing for it,
+      # and `true` is refused because it would let anyone set their own `request.ip` —
+      # the login rate-limit key (docs/cloud/API-STAGING.md §5).
+      - key: API_TRUST_PROXY
+        value: uniquelocal
+
+      # ---- Values entered in the Render dashboard, never in this file ------------
+      # `sync: false` means Render prompts for the value and stores it in the service's
+      # own environment. Nothing here is readable from the repository or from a build
+      # log.
+
+      # The exact origin of the web deployment. No wildcard is accepted.
+      - key: CORS_ALLOWED_ORIGINS
+        sync: false
+
+      # Reported by /health and /health/ready.
+      - key: SERVICE_VERSION
+        sync: false
+
+      # The runtime role only: no DDL, no BYPASSRLS, no INSERT on organizations or
+      # users. The migration and provisioning credentials are not here and must never
+      # be — a process that cannot reshape the schema cannot be made to.
+      - key: DATABASE_URL
+        sync: false
+
+      # Keys the CSRF token MAC. A dedicated staging value, generated for this service
+      # and used nowhere else.
+      - key: AUTH_SESSION_SECRET
+        sync: false

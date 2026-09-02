@@ -18,6 +18,13 @@ import { createLogger } from '@organic-os/observability';
 import { buildApp } from './app.js';
 import { buildAuthDependencies } from './auth/build.js';
 
+/**
+ * How long draining may take after SIGTERM before the process gives up and exits.
+ * Deliberately shorter than the platform's own kill delay (Render and Railway both
+ * allow 30 s), so the last thing in the logs is ours rather than a SIGKILL.
+ */
+const SHUTDOWN_GRACE_MS = 20_000;
+
 async function main(): Promise<void> {
   // Fail fast: an invalid environment must stop the process before it serves traffic.
   // Authentication configuration is validated here too, so a production deployment
@@ -46,6 +53,17 @@ async function main(): Promise<void> {
   logger.info(
     describeConnection(databaseEnv.DATABASE_URL),
     'database pool opened for the runtime role',
+  );
+
+  // The trust boundary and the cross-origin grant decide who `request.ip` belongs to
+  // and who may read a response, so both are stated at startup rather than inferred
+  // from a dashboard. Neither value is a secret: a hop count and a list of origins.
+  logger.info(
+    {
+      trustProxy: env.API_TRUST_PROXY,
+      corsAllowedOrigins: env.CORS_ALLOWED_ORIGINS,
+    },
+    'http edge configuration',
   );
 
   if (authConfig.nodeEnv === 'production') {
@@ -95,18 +113,34 @@ async function main(): Promise<void> {
     // Readiness, not liveness: a database outage must stop traffic being routed here
     // without the platform restarting a process that is otherwise fine.
     checkReady: () => checkDatabaseReady(database.db),
+    // Empty unless the deployment names origins. A same-origin topology needs none,
+    // and an absent value must never become a permissive one.
+    cors: { allowedOrigins: env.CORS_ALLOWED_ORIGINS },
+    trustProxy: env.API_TRUST_PROXY,
   });
 
   const shutdown = (signal: NodeJS.Signals): void => {
     logger.info({ signal }, 'shutdown requested');
 
+    // The platform sends SIGTERM and then kills the process a fixed time later. Draining
+    // must therefore be bounded by *us*, or a stuck in-flight request turns a rolling
+    // deploy into a hard kill with the pool still open.
+    const forceExit = setTimeout(() => {
+      logger.error({ signal, graceMs: SHUTDOWN_GRACE_MS }, 'shutdown did not finish in time');
+      process.exit(1);
+    }, SHUTDOWN_GRACE_MS);
+
+    forceExit.unref();
+
     void app
       .close()
       .then(async () => {
         await database.close();
+        clearTimeout(forceExit);
         logger.info({ signal }, 'shutdown complete');
       })
       .catch((error: unknown) => {
+        clearTimeout(forceExit);
         logger.error(
           { signal, errorMessage: error instanceof Error ? error.message : 'unknown error' },
           'shutdown failed',
