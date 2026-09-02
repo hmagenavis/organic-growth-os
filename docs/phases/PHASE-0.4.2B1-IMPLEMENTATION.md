@@ -1,6 +1,10 @@
 # PHASE-0.4.2B1 — Clients management API (implementation record)
 
-Status: **PENDING VERIFICATION** — see §14
+Status: **PASS** — verified 2026-09-02
+All gates pass. The PostgreSQL suites were executed in GitHub Actions
+(run `33611941595`, commit `3c279f6`, branch `phase/0.4.2b1-clients-api`); they cannot
+run on the development machine, where Docker Desktop starts its processes but its
+engine never answers and the local PostgreSQL 17 has no pgvector. See §14.
 Scope source: `docs/phases/PHASE-0.md` §0.4.2 (client resource half only)
 
 Phase 0.4.1 answered *what organization may this user act in, and as what*.
@@ -416,16 +420,24 @@ default/maximum/over-maximum limit and a bad cursor; `page` has no total.
 
 Run on the resulting commit:
 
-| Gate | Result |
-|---|---|
-| `pnpm format:check` | — |
-| `pnpm lint` | — |
-| `pnpm typecheck` | — |
-| `pnpm test` (unit, all packages) | — |
-| `pnpm test:integration` (database + API, real PostgreSQL) | — |
-| `pnpm build` | — |
-| `pnpm audit --audit-level critical` | — |
-| GitHub Actions CI | — |
+| Gate | Where | Result |
+|---|---|---|
+| `pnpm format:check` | local + CI | pass |
+| `pnpm lint` | local + CI | pass |
+| `pnpm typecheck` | local + CI | pass |
+| `pnpm test` (unit, all packages) | local + CI | pass — 541 tests, 27 files |
+| `pnpm test:integration` — `@organic-os/database` | CI | pass — 219 tests, 11 files |
+| `pnpm test:integration` — `@organic-os/api` | CI | pass — 71 tests, 4 files |
+| `pnpm build` | local + CI | pass |
+| `pnpm audit --audit-level critical` | local + CI | pass — no known vulnerabilities |
+| GitHub Actions CI | run `33611941595` | **green** |
+
+The unit total includes the 34 contract tests and the 47 client-route tests added
+here; the integration totals include this sub-phase's two new suites, which run the
+matrices of §13 against real PostgreSQL with `FORCE ROW LEVEL SECURITY` on.
+
+An earlier run of this branch (`33611590906`) failed at the unit-test step on an
+unrelated pre-existing flake in `packages/auth`; see §17.4.
 
 Reconfirmed by the integration suites rather than by inspection: `FORCE ROW LEVEL
 SECURITY` intact, runtime role `NOSUPERUSER` / `NOBYPASSRLS`, no tenant context
@@ -433,8 +445,6 @@ leakage, no cross-client scope leakage, client read = permission AND scope, clie
 writes = agency_admin AND scope, scoped-with-zero-rows sees zero clients, a new client
 does not widen scoped memberships, `audit_logs` still append-only, and a platform
 administrator gets no organization authority.
-
-*(This table is filled in with the recorded run before the sub-phase is marked PASS.)*
 
 ---
 
