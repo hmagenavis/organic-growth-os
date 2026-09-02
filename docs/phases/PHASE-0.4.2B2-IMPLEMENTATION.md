@@ -1,6 +1,10 @@
 # PHASE-0.4.2B2 — Sites management API + safe initial site settings (implementation record)
 
-Status: **PENDING CI** — local gates green; PostgreSQL suites pending GitHub Actions
+Status: **PASS** — verified 2026-09-02
+All gates pass. The PostgreSQL suites were executed in GitHub Actions (run
+`33633981812`, commit `c3e2508`, branch `phase/0.4.2b2-sites-api`); they cannot run on
+the development machine, where Docker Desktop starts its processes but its engine never
+answers and the local PostgreSQL 17 has no pgvector. See §14.
 Scope source: sub-phase brief 0.4.2B2; `docs/phases/PHASE-0.4.2B1-IMPLEMENTATION.md` §19
 
 Sub-phase 0.4.2B1 established the rule for a tenant business resource:
@@ -525,21 +529,25 @@ client's or another tenant's site; default/maximum/over-maximum limit and a bad 
 
 ## 14. Verification
 
+Run on the resulting commit:
+
 | Gate | Where | Result |
 |---|---|---|
-| `pnpm format:check` | local | pass |
-| `pnpm lint` | local | pass |
-| `pnpm typecheck` | local | pass |
-| `pnpm test` (unit, all packages) | local | pass — 709 tests, 29 files |
-| `pnpm build` | local | pass |
-| `pnpm audit --audit-level critical` | local | pass — no known vulnerabilities |
-| `pnpm test:integration` — `@organic-os/database` | CI | pending |
-| `pnpm test:integration` — `@organic-os/api` | CI | pending |
-| GitHub Actions CI | pending | pending |
+| `pnpm format:check` | local + CI | pass |
+| `pnpm lint` | local + CI | pass |
+| `pnpm typecheck` | local + CI | pass |
+| `pnpm test` (unit, all packages) | local + CI | pass — 709 tests, 29 files |
+| `pnpm test:integration` — `@organic-os/database` | CI | pass — 266 tests, 12 files |
+| `pnpm test:integration` — `@organic-os/api` | CI | pass — 113 tests, 5 files |
+| `pnpm build` | local + CI | pass |
+| `pnpm audit --audit-level critical` | local + CI | pass — no known vulnerabilities |
+| GitHub Actions CI | run `33633981812` | **green**, first attempt |
 
 The unit total was 541 at the end of 0.4.2B1 and is 709 here; the difference is this
 sub-phase's 54 normalization tests, 34 contract tests and 63 route tests, plus the
-existing suites unchanged.
+existing suites unchanged. The database integration total went from 219 to 266 and the
+API integration total from 71 to 113 — this sub-phase's two new suites — with every
+0.4.2B1, 0.4.2A, 0.4.1, 0.3 and 0.2 suite passing unchanged alongside them.
 
 The PostgreSQL suites cannot run on the development machine: Docker Desktop starts its
 processes but its engine never answers (`npipe:////./pipe/dockerDesktopLinuxEngine`
@@ -547,13 +555,19 @@ does not exist), and the local PostgreSQL 17 has no pgvector. This is the same
 limitation recorded in 0.4.2B1 §14; GitHub Actions is the authoritative integration
 verifier.
 
-To be reconfirmed by the integration suites rather than by inspection: `FORCE ROW LEVEL
+Reconfirmed by the integration suites rather than by inspection: `FORCE ROW LEVEL
 SECURITY` intact, runtime role `NOSUPERUSER` / `NOBYPASSRLS`, no tenant context leakage,
 site read = permission AND parent-client access, site writes = agency_admin AND
-parent-client access, scoped-with-zero-rows sees zero sites, a platform administrator
-gets no organization authority, every service-created site starts in `review`, the
-create transaction is atomic across site + settings + audit, and `audit_logs` is still
-append-only.
+parent-client access, scoped-with-zero-rows sees zero sites, no cross-client or
+cross-tenant ownership confusion, a platform administrator gets no organization
+authority, site creation cannot select an autopilot mode, every service-created site
+starts in `review`, the create transaction is atomic across site + settings + audit,
+and `audit_logs` is still append-only.
+
+The Phase 0.2 tenant-isolation, Phase 0.3 authentication, Phase 0.4.1 authorization,
+Phase 0.4.2A membership and Phase 0.4.2B1 client regressions all pass unchanged in the
+same run — including the client suites that are the check on the keyset helper
+extraction of §11.
 
 ---
 
