@@ -19,6 +19,23 @@ export {
   type OrganizationResponse,
 } from './authorization.js';
 export {
+  CLIENT_PAGE_DEFAULT_LIMIT,
+  CLIENT_PAGE_MAX_LIMIT,
+  clientListQuerySchema,
+  clientListResponseSchema,
+  clientPageSchema,
+  clientResponseSchema,
+  clientSchema,
+  createClientRequestSchema,
+  updateClientRequestSchema,
+  type Client,
+  type ClientListQuery,
+  type ClientListResponse,
+  type ClientResponse,
+  type CreateClientRequestBody,
+  type UpdateClientRequestBody,
+} from './clients.js';
+export {
   healthResponseSchema,
   readinessResponseSchema,
   type HealthResponse,

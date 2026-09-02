@@ -25,11 +25,16 @@ export {
 
 export { withTenantTransaction } from './tenant/with-tenant-transaction.js';
 
+export { InvalidClientCursorError, isInvalidClientCursorError } from './repositories/index.js';
+
 export type {
   AddMembershipClientScopeInput,
   AppendAuditLogInput,
   AuditLogRecord,
   AuditLogRepository,
+  ClientListAccess,
+  ClientPage,
+  ClientPageRequest,
   ClientRecord,
   ClientRepository,
   CreateClientInput,
@@ -85,6 +90,22 @@ export {
   type RemoveMemberInput,
   type ReplaceMemberScopesInput,
 } from './administration/membership-administration.js';
+
+/**
+ * Clients (Phase 0.4.2B1). The first tenant business resource with an API: read is
+ * role permission AND client scope, writes are `agency_admin` AND scope, and the
+ * mutation and its audit row commit together inside the authorized transaction.
+ */
+export {
+  createClientService,
+  type ClientListResult,
+  type ClientService,
+  type ClientServiceOptions,
+  type ClientView,
+  type CreateClientRequest,
+  type ListClientsQuery,
+  type UpdateClientPatch,
+} from './clients/client-service.js';
 
 export type {
   AuditActorKind,

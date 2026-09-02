@@ -55,7 +55,15 @@ export type {
   SiteSettingsRepository,
 };
 export type { AppendAuditLogInput, AuditLogRecord } from './audit-logs.js';
-export type { ClientRecord, CreateClientInput, UpdateClientInput } from './clients.js';
+export { InvalidClientCursorError, isInvalidClientCursorError } from './clients.js';
+export type {
+  ClientListAccess,
+  ClientPage,
+  ClientPageRequest,
+  ClientRecord,
+  CreateClientInput,
+  UpdateClientInput,
+} from './clients.js';
 export type {
   AddMembershipClientScopeInput,
   MembershipClientScopeRecord,

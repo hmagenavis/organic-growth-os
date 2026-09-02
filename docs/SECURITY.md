@@ -108,6 +108,26 @@ API boundary AND at the execution engine for write actions):
   - attaches existing accounts only. An address with no account is answered
     `INVITATION_FLOW_NOT_IMPLEMENTED`; **no default password is ever generated and no
     credential is ever emailed.**
+- **Client API** (sub-phase 0.4.2B1). Reading a client is `client.read` **and** the
+  membership's client access; writing one is `agency_admin` **and** the same client
+  access — a scoped agency admin cannot mutate a client outside its scope, because the
+  role grants the verb and not the reach. Collection endpoints are bounded (default 50,
+  maximum 100, keyset cursor, deterministic `(created_at, id)` order) and carry no
+  total count, so no response can report rows the caller may not read. `scoped`
+  filtering is a join in PostgreSQL, never a JavaScript filter over rows already
+  fetched. Creating a client writes **no** `membership_client_scopes` row: `all_clients`
+  memberships reach it by policy and `scoped` ones do not until an administrator says
+  so through the member-scope API. `client.create` / `client.update` stay agency_admin
+  only for Phase 0 — the open question from 0.4.1 §4, closed conservatively. There is
+  deliberately no client deletion and no `status` mutation: the archive/delete lifecycle
+  cascades into sites, settings, scopes and future SEO history, and is designed in a
+  later sub-phase.
+- **Tenant audit for client mutations.** `client.created` and `client.updated` are
+  written inside the authorized tenant transaction, with actor ids from the *context*.
+  `before`/`after` hold `name`, `status`, `industry` and a boolean for whether notes are
+  present — never the note text, because it is the one free-form field on `clients` and
+  the trail is append-only by privilege. A refused mutation writes no audit row at all;
+  it is structured-logged instead.
 - **Session invalidation on membership change** (ADR-0017). Removal, role change and
   any narrowing of client access revoke **every** server-side session of the affected
   user. Broadening does not, because authorization is re-proven per request and nothing
