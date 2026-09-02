@@ -39,6 +39,11 @@ WORKDIR /repo
 # ---------------------------------------------------------------------------------
 FROM base AS build
 
+# Switching an existing install to `--prod` makes pnpm rebuild the modules directory,
+# and it refuses to do that unattended without being told it is not at a terminal.
+# Scoped to this stage so the flag does not travel into the runtime image.
+ENV CI=true
+
 # Manifests first, so a source-only change does not re-resolve the dependency graph.
 # Every workspace manifest is copied because pnpm resolves the whole workspace before
 # it can filter to one project.
