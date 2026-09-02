@@ -293,7 +293,27 @@ in-memory and therefore per-instance).
 | `pnpm test` (unit) | local | pass — 709 tests, 29 files |
 | `pnpm build` | local | pass |
 | Live staging probes (§2) | local → Supabase | pass |
-| `pnpm test:integration` including the new verification suite | CI | see §10 |
+| `pnpm test:integration` including the new verification suite | CI | pass — run `33652249866`, **42/42 checks on both runs** |
+| GitHub Actions CI | run `33652249866` | **green** |
+
+---
+
+### 7.4 The verification command was wrong twice, and CI said so
+
+The first CI run reported **39 of 42**, and all three failures belonged to the command
+rather than to the API. That is the argument for §4's last paragraph in one line: a
+verification tool nobody verifies is a report generator.
+
+* `GET /auth/me` returns the `CurrentUser` object directly, not wrapped in `{ user }`.
+  The check read `.user.id`, found `undefined`, and failed a perfectly good 200. It now
+  parses the response with `currentUserSchema`.
+* The member checks answered 404 because the test harness wired only auth,
+  authorization, clients and sites, while `apps/api/src/index.ts` also wires member
+  administration. **An unwired route answers exactly like a broken one**, so the
+  harness now builds the whole surface a deployment serves.
+
+Both are fixed and the second run reports 42 of 42, twice — the second time being the
+idempotence run.
 
 ---
 
