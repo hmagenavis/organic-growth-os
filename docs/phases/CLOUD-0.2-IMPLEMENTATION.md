@@ -1,19 +1,20 @@
 # CLOUD-0.2 — Fastify API staging runtime (implementation record)
 
-Status: **BLOCKED — deployment deferred by decision (2026-09-03).** The repository half
-is complete and verified green in CI. The deployment half was not attempted: it needs a
-paid always-on instance, and the account owner chose not to spend on staging hosting
-yet. Nothing here expires; §9 is the list of steps that resume it.
+Status: **DEPLOYED on Render's free instance; unauthenticated verification complete;
+authenticated E2E pending the staging identity (2026-09-03).** The account owner chose
+not to pay for staging hosting yet, so the service runs on the free instance type with
+the consequences accounted for in §10; moving to a paid always-on instance is a
+one-word change in `render.yaml`. Live results are in §10.
 Architecture: `docs/cloud/API-STAGING.md`.
 
-**What that costs, stated plainly.** `apps/api` still runs only on an operator's
-machine, so there is no environment in which a browser can reach the system. The
-application-level proof from Cloud 0.2A stands — a real pooled connection to managed
-staging over verified TLS, a real login, a real session — and everything in this phase
-is proven as far as a container can prove it (§8). What is *not* proven is the network:
-the cookie topology, the CORS grant against a real browser origin, and the trust
-boundary against a real load balancer. Those are verified when the service exists, and
-not before. This document does not claim them.
+**What is proven and what is not, stated plainly.** Everything about the deployed
+network path is now measured rather than assumed: TLS at the origin, `verify-full` TLS
+to Supabase from the deployed process, the CORS grant and refusal against real origins,
+CSRF against the production cookie profile, graceful shutdown under a real rolling
+deploy, no secret in the logs, and the proxy trust boundary — including against a
+forged header. Two things remain: an authenticated end-to-end run, which needs a
+staging identity only the account owner can provision (§9, §10.5); and real browser
+cookie behaviour, which needs web and API on one registrable domain (§3).
 
 Cloud 0.1 put the web app on Vercel and the database on Supabase. Cloud 0.2A proved the
 API works against that database from the operator's own machine. What was left was the
@@ -247,7 +248,96 @@ through a chat message.
 
 ## 10. Results
 
-_Deployment results pending; see the status line. Repository results are in §8._
+### Deployment (2026-09-03, Render free instance, Frankfurt)
+
+| Item | Value |
+|---|---|
+| Service | `organic-os-api-staging`, `srv-daco26qfngtc73e5p9pg`, Blueprint-managed |
+| Origin | `https://organic-os-api-staging.onrender.com` |
+| Branch deployed | `cloud/0.2-api-staging-runtime` @ `807e54d`, via `autoDeployTrigger: checksPass` |
+| TLS at the origin | Google Trust Services WE1, `CN=onrender.com`, verified (`curl` `ssl_verify_result=0`); plaintext `http://` → 301 to `https://` |
+| Edge in front of the origin | **Cloudflare**, then Render's own proxy on the container host (§10.2) |
+
+Every check below ran against that origin from outside, and the log lines it produced
+were read back in Render's log stream.
+
+| Check | Result |
+|---|---|
+| `GET /health` | 200, `{"status":"ok","service":"api","version":"0.2.0-staging"}` |
+| `GET /health/ready` | 200 `ready` — a real `SELECT 1` through the pool over `verify-full` TLS to Supabase, because `tlsOptionsFor` refuses a non-local connection with anything less |
+| `x-content-type-options` | `nosniff` on every response |
+| Unauthenticated `/auth/me`, `/auth/organizations`, `/organizations/:id/clients`, `/organizations/:id/members` | 401, problem+json, no internals |
+| Malformed organization id | 401, no internals |
+| Path traversal (`/organizations/../../etc/passwd`) | normalised and 404, problem+json |
+| Unknown route | 404, `application/problem+json`, request id, no stack |
+| `POST /auth/login` without CSRF | 403 `csrf-token-invalid`; log verdict `missing_cookie_token` |
+| `GET /auth/csrf` | 200, `__Host-organic-os-csrf` cookie set — the **production** cookie profile is live |
+| Login with a mismatched CSRF token | 403; log verdict `token_mismatch` |
+| Login with a valid CSRF token and wrong credentials | 401 `invalid-credentials`; log `reason: unknown_user`, no address, no password |
+| CORS, allowed origin, actual request | `access-control-allow-origin: https://organic-growth-os-web.vercel.app`, `access-control-allow-credentials: true`, `vary: origin` |
+| CORS, allowed origin, preflight | 204 with methods `GET, HEAD, POST, PATCH, OPTIONS`, headers `content-type, accept, x-csrf-token`, max-age 600 |
+| CORS, unlisted origin, preflight | 403 |
+| CORS, unlisted origin, actual request | 200 with **no** `access-control-allow-origin` |
+| SIGTERM during a rolling deploy | `shutdown requested` → `shutdown complete` in 2 ms, exit clean, no SIGKILL |
+| Startup with `AUTH_SESSION_SECRET` absent (first deploy) | refused to start: `AUTH_SESSION_SECRET (invalid_type)` — the variable name only, no value, no environment dump |
+| Logs | no password, no connection string, no cookie, no token, no secret name with a value |
+| `request.ip` for a request from a known address | **the real address**, `192.115.79.114` |
+| `request.ip` for the same request with a forged `x-forwarded-for: 1.2.3.4, 10.0.0.9, 172.68.1.1` | **still the real address** |
+
+### 10.1 The first deploy failed, correctly
+
+Both `sync: false` values entered on Render's Blueprint screen were silently dropped —
+the service came up with ten variables, not twelve. The process refused to start and
+logged exactly one thing: `AUTH_SESSION_SECRET (invalid_type)`. That is `createAuthConfig`
+failing closed, naming the variable and nothing else. The values were entered again in
+the service's Environment tab, and the second paste of `DATABASE_URL` brought three
+lines of the local `.env` file with it into a textarea that accepts multi-line input
+silently; it was trimmed to the single `postgres://…/postgres` line in-page before
+saving. A URL with a stray `DATABASE_MAX_CONNECTIONS=5` on its second line would have
+been the next startup failure, and it too would have named only the variable.
+
+### 10.2 The trust boundary took two measured corrections
+
+Recorded in full in `docs/cloud/API-STAGING.md` §5; the short form:
+
+1. `uniquelocal` alone → every external request logged `ip: 127.0.0.1`. Render's proxy
+   is on the container host; only its health checker (`10.231.x.x`) is private-range.
+2. `loopback,uniquelocal` → the same request logged `ip: 162.158.94.136`, a Cloudflare
+   edge. `*.onrender.com` is Cloudflare-fronted.
+3. `loopback,uniquelocal,<Cloudflare ranges>` → `ip: 192.115.79.114`, the real client,
+   and unchanged under a forged header.
+
+Neither of the first two would have been caught without the `ip` field this phase added
+to the request log. Both are the exact failure §7 describes — every client in one
+rate-limit bucket — and both looked like a correctly configured service from the
+outside.
+
+### 10.3 Render's edge blocks some requests before they reach the API
+
+A path containing a SQL-injection-shaped segment (`' OR 1=1--`) returned a Render/Cloudflare
+HTML "Blocked" page (403), never reaching Fastify. This is defence in depth the platform
+supplies and the application did not ask for. It is recorded so that a 403 with an HTML
+body is not mistaken for an API response, and so nobody relies on it: the API's own
+validation is what is tested.
+
+### 10.4 The web production alias is public
+
+`https://organic-growth-os-web.vercel.app` serves the application with no SSO in front
+of it, while the team-scoped deployment URL redirects to Vercel's SSO. Vercel's
+"Standard" deployment protection covers preview and deployment URLs, not the production
+alias. `docs/cloud/VERCEL-STAGING.md` claimed the staging build was not world-readable;
+that claim was true of the URL that was checked and false of the production alias, and
+is corrected there. The exposure is a Phase 0.1 static shell.
+
+### 10.5 Not yet done
+
+- **Authenticated E2E.** Staging still holds zero organizations and zero users;
+  `pnpm provision:organization` reads the first administrator's password from a
+  terminal and is therefore the account owner's to run. Once it has run,
+  `pnpm verify:e2e --api https://organic-os-api-staging.onrender.com --email <address>`
+  is the tool, and it too prompts for the password.
+- **Browser cookie behaviour** stays unverified until web and API share a registrable
+  domain (§3). Everything else in the topology is now measured rather than assumed.
 
 ### If the deployment resumes on a free instance
 

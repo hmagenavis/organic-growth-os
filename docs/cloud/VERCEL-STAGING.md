@@ -114,10 +114,16 @@ Checked against the live deployment rather than inferred from configuration:
 | Secrets in JavaScript | **none** — all six emitted chunks were fetched and scanned for `DATABASE_`, `SUPABASE_`, `service_role`, `postgres://`, `pooler.supabase`, `AUTH_SESSION_SECRET` and the three role names |
 | Database credentials in the project | **none** — exactly one environment variable exists, `NEXT_PUBLIC_APP_NAME` |
 
-**Vercel Authentication is on.** An unauthenticated request to the deployment URL gets
-`302` to `vercel.com/sso-api`, so the staging build is not world-readable. That default
-was kept rather than disabled: an unfinished application has no reason to be public, and
-`X-Robots-Tag: noindex` is set as well.
+**Vercel Authentication is on — for deployment URLs only.** An unauthenticated request
+to the team-scoped deployment URL gets `302` to `vercel.com/sso-api`. **The production
+alias `https://organic-growth-os-web.vercel.app` is public**, verified in Cloud 0.2 by
+fetching it and matching the response headers to `next.config.ts`. Vercel's "Standard"
+deployment protection covers preview and per-deployment URLs and deliberately leaves the
+production domain open; the earlier version of this paragraph said the staging build was
+not world-readable, which was true of the URL that was checked and false of the alias.
+The exposure today is a Phase 0.1 static shell with no data and no credential. When the
+dashboard exists, decide explicitly whether the production alias stays public or moves
+to "All Deployments" protection. `X-Robots-Tag: noindex` is set.
 
 ### Deviation to be aware of
 
