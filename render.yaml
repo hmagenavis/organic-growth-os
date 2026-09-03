@@ -19,7 +19,24 @@ services:
     # long-lived pool and every authorized request is a transaction, so round-trip
     # latency to the database is paid many times per request.
     region: frankfurt
-    plan: starter
+
+    # `free`, deliberately and temporarily. A free instance spins down after ~15
+    # minutes of inactivity and takes ~50 seconds to wake, and the honest accounting of
+    # that is in docs/phases/CLOUD-0.2-IMPLEMENTATION.md §10:
+    #
+    #   * the login rate limiter is **not** weakened — its window is 15 minutes, the
+    #     same order as the spin-down threshold, so an attacker who waits out a
+    #     spin-down has waited out the window anyway;
+    #   * `pnpm verify:e2e` still proves login, session, CSRF and the Phase 0.4
+    #     authorization rules against a deployed service, because it carries its own
+    #     cookie jar;
+    #   * what stays unproven is real browser cookie behaviour, which needs the
+    #     sibling-subdomain arrangement in docs/cloud/API-STAGING.md §7.
+    #
+    # Moving to `starter` is a one-word change here. Do it before anyone outside the
+    # team is pointed at this service.
+    plan: free
+
     dockerfilePath: ./apps/api/Dockerfile
     dockerContext: .
 
@@ -38,6 +55,10 @@ services:
     # means it behaves exactly as designed. Two would mean two independent limiters,
     # each counting a fraction of the attempts, with no shared store to fix it until a
     # later phase (docs/cloud/API-STAGING.md §8).
+    #
+    # A free instance is single-instance by construction, so this is stated for the day
+    # the plan changes rather than for today. If Render rejects the key on the free
+    # plan, remove it — and put it back with the plan.
     numInstances: 1
 
     # Readiness, not liveness: a deploy is promoted only once the new instance can
