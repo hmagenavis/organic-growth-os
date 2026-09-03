@@ -125,23 +125,39 @@ connection that has no configured root, rather than downgrading it to plaintext.
 Phase 0.3 shipped `trustProxy: false` because nothing was in front of the process.
 Render terminates TLS at its own edge, so this has to be stated.
 
-The setting is `API_TRUST_PROXY=loopback,uniquelocal`: believe `x-forwarded-for` only
-when the socket peer is loopback or in private address space — the two places Render's
-own proxies live, and two places no internet client can be. Walking the chain from the
-socket inwards then stops at the first public address, which is the browser as Render's
-edge observed it.
+The setting is `API_TRUST_PROXY=loopback,uniquelocal,<Cloudflare edge CIDRs>`: believe
+`x-forwarded-for` only while the address being walked is one of the proxies that are
+actually in front of the process. Walking the chain from the socket inwards then stops
+at the first address that is none of them — the browser.
 
-**That value was measured, not assumed, and the first guess was wrong.** The service
-was deployed with `uniquelocal` alone, on the reasoning that a platform load balancer
-sits in private address space. The `request completed` log then showed every external
-request with `ip: 127.0.0.1` and every health check with `ip: 10.231.26.95`: Render
-hands external traffic to the container through a proxy on the *same host*, so the
-peer is loopback, while its health checker is the private-range one. With
-`uniquelocal` alone the boundary trusted the health checker and not the traffic, and
-every browser collapsed to one rate-limit bucket — exactly the failure §5 exists to
-prevent, in a variant nobody had predicted. Adding `loopback` fixed it, and
-`apps/api/src/http/trust-proxy.test.ts` now pins both peers. The log field that made
-this visible is the one this section asks for.
+**That value was measured, not assumed, and it took two corrections to get right.**
+Each was found the same way: by reading the `ip` field of the `request completed` log
+against a request whose true origin was known.
+
+1. **The peer is loopback, not private-range.** The service was first deployed with
+   `uniquelocal` alone, on the reasoning that a platform load balancer sits in private
+   address space. Every external request then logged `ip: 127.0.0.1`, and every health
+   check `ip: 10.231.26.95`. Render hands external traffic to the container through a
+   proxy on the *same host*; only its health checker is the private-range one. The
+   boundary trusted the health checker and not the traffic, and every browser collapsed
+   to one rate-limit bucket — exactly the failure this section exists to prevent, in a
+   variant nobody had predicted. `loopback` was added.
+2. **`*.onrender.com` is fronted by Cloudflare.** With `loopback,uniquelocal` the same
+   request logged `ip: 162.158.94.136` — a Cloudflare edge, not the client. The first
+   public hop in the header is Cloudflare's, so the walk stopped there. Cloudflare's
+   published edge ranges (`cloudflare.com/ips-v4`, `/ips-v6`) were added, pinned as
+   literals in `render.yaml` rather than fetched at runtime.
+
+Why trusting those ranges is sound rather than convenient: Render's proxy appends the
+address it actually saw, so a client that forges its own `x-forwarded-for` places the
+forgery to the *left* of its real address, and the walk never reaches it. The only way
+to forge is to *be* a Cloudflare edge or a Render proxy. `apps/api/src/http/trust-proxy.test.ts`
+pins all three peers and the forged-entry case against each.
+
+**Known limit.** The ranges are pinned. If Cloudflare publishes a new range and a
+browser is once again logged as a Cloudflare address, refresh the list. Nothing breaks
+in the meantime except the granularity of the login limiter for clients arriving through
+the new range.
 
 Two forms are **refused at startup**, and the refusals are the substance of
 `parseTrustProxy`:

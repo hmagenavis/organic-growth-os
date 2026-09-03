@@ -105,17 +105,29 @@ services:
       - key: DATABASE_IDLE_TX_TIMEOUT_MS
         value: '15000'
 
-      # Trust the peer only when it is loopback or inside private address space — the
-      # two places Render's own proxies live, and two places no internet client can be.
-      # Measured live rather than assumed: with `uniquelocal` alone every external
-      # request logged `ip: 127.0.0.1`, because Render hands traffic to the container
-      # through a proxy on the *same host*, while its health checks arrive from a
-      # 10.x address. Both are Render. A hop count is refused by `parseTrustProxy`
-      # because fastify@5 enforces nothing for it, and `true` is refused because it
-      # would let anyone set their own `request.ip` — the login rate-limit key
-      # (docs/cloud/API-STAGING.md §5).
+      # The proxies in front of this process, measured on the deployed service rather
+      # than assumed, and nothing an internet client can be:
+      #
+      #   * `loopback`    — Render hands external traffic to the container through a
+      #                     proxy on the same host; with `uniquelocal` alone every
+      #                     browser logged `ip: 127.0.0.1`.
+      #   * `uniquelocal` — Render's health checker arrives from a private 10.x address.
+      #   * the CIDRs     — Cloudflare's published edge ranges (cloudflare.com/ips-v4,
+      #                     /ips-v6). `*.onrender.com` is fronted by Cloudflare, so the
+      #                     first public hop in `x-forwarded-for` is a Cloudflare edge
+      #                     (`172.68.22.85`, `162.158.94.136` were observed), and
+      #                     without these the client was reported as Cloudflare.
+      #
+      # Walking the chain from the socket inwards now stops at the first address that
+      # is none of the above — the browser. A forged entry a client appends sits to the
+      # left of its real address and is never reached, because Render's proxy appends
+      # the true peer. Pinned, not fetched at runtime; refresh from Cloudflare's lists
+      # if a browser is ever logged as a 1xx/2xxx address again. A hop count is
+      # refused by `parseTrustProxy` because fastify@5 enforces nothing for it, and
+      # `true` is refused because it would let anyone set their own `request.ip` —
+      # the login rate-limit key (docs/cloud/API-STAGING.md §5).
       - key: API_TRUST_PROXY
-        value: loopback,uniquelocal
+        value: loopback,uniquelocal,173.245.48.0/20,103.21.244.0/22,103.22.200.0/22,103.31.4.0/22,141.101.64.0/18,108.162.192.0/18,190.93.240.0/20,188.114.96.0/20,197.234.240.0/22,198.41.128.0/17,162.158.0.0/15,104.16.0.0/13,104.24.0.0/14,172.64.0.0/13,131.0.72.0/22,2400:cb00::/32,2606:4700::/32,2803:f800::/32,2405:b500::/32,2405:8100::/32,2a06:98c0::/29,2c0f:f248::/32
 
       # Reported by /health and /health/ready. A literal, so which version is deployed
       # is answerable from a diff rather than from a dashboard.

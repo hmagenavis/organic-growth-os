@@ -118,6 +118,30 @@ describe('the boundary Render actually has', () => {
       await ipSeenBy(createApp(['loopback', 'uniquelocal']), `1.2.3.4, ${CLIENT}`, LOOPBACK_PEER),
     ).toBe(CLIENT);
   });
+
+  // Also measured: `*.onrender.com` is fronted by Cloudflare, so the first public hop
+  // in the header is a Cloudflare edge and, until its ranges were trusted, the browser
+  // was reported as Cloudflare (`162.158.94.136`).
+  const CLOUDFLARE_EDGE = '162.158.94.136';
+  const RENDER_TRUST = ['loopback', 'uniquelocal', '162.158.0.0/15', '172.64.0.0/13'];
+
+  it('without the edge ranges, the browser is reported as the edge', async () => {
+    expect(
+      await ipSeenBy(
+        createApp(['loopback', 'uniquelocal']),
+        `${CLIENT}, ${CLOUDFLARE_EDGE}`,
+        LOOPBACK_PEER,
+      ),
+    ).toBe(CLOUDFLARE_EDGE);
+  });
+
+  it('with the edge ranges, the browser is reached and a forged entry still is not', async () => {
+    const app = createApp(RENDER_TRUST);
+    expect(await ipSeenBy(app, `${CLIENT}, ${CLOUDFLARE_EDGE}`, LOOPBACK_PEER)).toBe(CLIENT);
+    expect(await ipSeenBy(app, `1.2.3.4, ${CLIENT}, ${CLOUDFLARE_EDGE}`, LOOPBACK_PEER)).toBe(
+      CLIENT,
+    );
+  });
 });
 
 describe('a hop count', () => {
