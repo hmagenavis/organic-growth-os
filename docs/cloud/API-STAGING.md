@@ -125,11 +125,23 @@ connection that has no configured root, rather than downgrading it to plaintext.
 Phase 0.3 shipped `trustProxy: false` because nothing was in front of the process.
 Render terminates TLS at its own edge, so this has to be stated.
 
-The setting is `API_TRUST_PROXY=uniquelocal`: believe `x-forwarded-for` only when the
-socket peer is in private address space, which on Render is the platform's own load
-balancer and which no internet client can be. Walking the chain from the socket
-inwards then stops at the first public address, which is the browser as Render's edge
-observed it.
+The setting is `API_TRUST_PROXY=loopback,uniquelocal`: believe `x-forwarded-for` only
+when the socket peer is loopback or in private address space — the two places Render's
+own proxies live, and two places no internet client can be. Walking the chain from the
+socket inwards then stops at the first public address, which is the browser as Render's
+edge observed it.
+
+**That value was measured, not assumed, and the first guess was wrong.** The service
+was deployed with `uniquelocal` alone, on the reasoning that a platform load balancer
+sits in private address space. The `request completed` log then showed every external
+request with `ip: 127.0.0.1` and every health check with `ip: 10.231.26.95`: Render
+hands external traffic to the container through a proxy on the *same host*, so the
+peer is loopback, while its health checker is the private-range one. With
+`uniquelocal` alone the boundary trusted the health checker and not the traffic, and
+every browser collapsed to one rate-limit bucket — exactly the failure §5 exists to
+prevent, in a variant nobody had predicted. Adding `loopback` fixed it, and
+`apps/api/src/http/trust-proxy.test.ts` now pins both peers. The log field that made
+this visible is the one this section asks for.
 
 Two forms are **refused at startup**, and the refusals are the substance of
 `parseTrustProxy`:

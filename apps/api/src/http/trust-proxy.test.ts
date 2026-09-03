@@ -95,6 +95,31 @@ describe('a named peer', () => {
   });
 });
 
+describe('the boundary Render actually has', () => {
+  // Measured on the deployed service, not assumed: Render hands external traffic to
+  // the container through a proxy on the same host, so the socket peer is loopback,
+  // while its health checks arrive from a private 10.x address. `uniquelocal` alone
+  // therefore trusted the health checker and not the traffic, and every browser
+  // request collapsed to `127.0.0.1`.
+  const LOOPBACK_PEER = '127.0.0.1';
+
+  it('with uniquelocal alone, a loopback peer is not trusted and the client is lost', async () => {
+    expect(await ipSeenBy(createApp(['uniquelocal']), CLIENT, LOOPBACK_PEER)).toBe(LOOPBACK_PEER);
+  });
+
+  it('with loopback and uniquelocal, both platform peers are trusted', async () => {
+    const app = createApp(['loopback', 'uniquelocal']);
+    expect(await ipSeenBy(app, CLIENT, LOOPBACK_PEER)).toBe(CLIENT);
+    expect(await ipSeenBy(app, CLIENT, EDGE)).toBe(CLIENT);
+  });
+
+  it('still stops at the first public address, so a forged entry is not reached', async () => {
+    expect(
+      await ipSeenBy(createApp(['loopback', 'uniquelocal']), `1.2.3.4, ${CLIENT}`, LOOPBACK_PEER),
+    ).toBe(CLIENT);
+  });
+});
+
 describe('a hop count', () => {
   it('is refused at configuration time, because Fastify would enforce nothing', () => {
     // fastify@5.12.1 `getTrustProxyFn` maps a number to a function that trusts

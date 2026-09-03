@@ -105,13 +105,17 @@ services:
       - key: DATABASE_IDLE_TX_TIMEOUT_MS
         value: '15000'
 
-      # Trust the peer only when it is inside private address space, which on Render is
-      # the platform's own load balancer and which no internet client can be. A hop
-      # count is refused by `parseTrustProxy` because fastify@5 enforces nothing for it,
-      # and `true` is refused because it would let anyone set their own `request.ip` —
-      # the login rate-limit key (docs/cloud/API-STAGING.md §5).
+      # Trust the peer only when it is loopback or inside private address space — the
+      # two places Render's own proxies live, and two places no internet client can be.
+      # Measured live rather than assumed: with `uniquelocal` alone every external
+      # request logged `ip: 127.0.0.1`, because Render hands traffic to the container
+      # through a proxy on the *same host*, while its health checks arrive from a
+      # 10.x address. Both are Render. A hop count is refused by `parseTrustProxy`
+      # because fastify@5 enforces nothing for it, and `true` is refused because it
+      # would let anyone set their own `request.ip` — the login rate-limit key
+      # (docs/cloud/API-STAGING.md §5).
       - key: API_TRUST_PROXY
-        value: uniquelocal
+        value: loopback,uniquelocal
 
       # Reported by /health and /health/ready. A literal, so which version is deployed
       # is answerable from a diff rather than from a dashboard.
