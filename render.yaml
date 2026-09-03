@@ -9,7 +9,8 @@
 # (docs/cloud/ENVIRONMENT-MATRIX.md).
 #
 # Three settings below are security decisions rather than defaults, and each is
-# explained where it appears: `numInstances`, `previewsEnabled` and `API_TRUST_PROXY`.
+# explained where it appears: `numInstances`, the *absence* of `previews`, and
+# `API_TRUST_PROXY`.
 
 services:
   - type: web
@@ -40,15 +41,23 @@ services:
     dockerfilePath: ./apps/api/Dockerfile
     dockerContext: .
 
-    branch: main
-    autoDeploy: true
+    # The Cloud 0.2 branch, until its pull request merges; then `main`. Render deploys
+    # the branch named *here*, so pointing this at `main` before the Dockerfile is on
+    # `main` would build nothing.
+    branch: cloud/0.2-api-staging-runtime
 
-    # Pull-request previews are off. A preview environment would need this service's
-    # environment to be useful, and that environment holds the staging runtime database
-    # credential and the session secret — so any contributor's branch would receive
-    # both. Preview data belongs on an isolated database (Supabase branching), never on
-    # shared staging (docs/cloud/CLOUD-ARCHITECTURE.md §5).
-    previewsEnabled: false
+    # Deploy a commit only once its GitHub checks pass — the CI workflow (unit,
+    # integration on real PostgreSQL, audit) and the API container workflow. A commit
+    # that fails either never reaches the service (docs/cloud/API-STAGING.md §9).
+    autoDeployTrigger: checksPass
+
+    # Pull-request previews are OFF, by omission: Render generates previews only when a
+    # service opts in with `previews.generation`, and this one deliberately does not. A
+    # preview environment would need this service's environment to be useful, and that
+    # environment holds the staging runtime database credential and the session secret
+    # — so any contributor's branch would receive both. Preview data belongs on an
+    # isolated database (Supabase branching), never on shared staging
+    # (docs/cloud/CLOUD-ARCHITECTURE.md §5). Do not add `previews:` here.
 
     # Exactly one instance, and this is load-bearing rather than thrift: the login rate
     # limiter is in-memory (`packages/auth/src/rate-limit/memory.ts`). One instance
