@@ -50,13 +50,23 @@ Both commands are load-bearing, not ceremony:
 
 ## 3. Environment variables
 
-Only one, and it is public by definition:
+Two, and both are public by definition:
 
 | Name | Class | Environments |
 |---|---|---|
 | `NEXT_PUBLIC_APP_NAME` | PUBLIC | Production, Preview, Development |
+| `NEXT_PUBLIC_API_BASE_URL` | PUBLIC | Production, Preview, Development |
 
-No `DATABASE_*`, no `AUTH_*`, no Supabase key of any kind is set on Vercel in Cloud 0.1.
+`NEXT_PUBLIC_API_BASE_URL` was added in Cloud 0.2 and is the *only* new value the web
+deployment needed in order to know where the API is. It is a hostname the browser must
+know to send a request at all, and knowing it grants nothing: the session is a
+`__Host-` cookie the browser attaches to that origin. It is validated as an origin —
+scheme, host and port, nothing else — so a path or a trailing slash cannot produce a
+doubled slash in a request path, and plaintext is refused outside loopback
+(`docs/cloud/API-STAGING.md` §7).
+
+No `DATABASE_*`, no `AUTH_*`, no Supabase key of any kind is set on Vercel — not in
+Cloud 0.1 and not after Cloud 0.2.
 `packages/config` enforces the boundary in code: `@organic-os/config/client` accepts
 only `NEXT_PUBLIC_*` and strips unknown keys, and there is no root export through which
 `@organic-os/config/server` could be reached from a client bundle.
@@ -104,10 +114,16 @@ Checked against the live deployment rather than inferred from configuration:
 | Secrets in JavaScript | **none** — all six emitted chunks were fetched and scanned for `DATABASE_`, `SUPABASE_`, `service_role`, `postgres://`, `pooler.supabase`, `AUTH_SESSION_SECRET` and the three role names |
 | Database credentials in the project | **none** — exactly one environment variable exists, `NEXT_PUBLIC_APP_NAME` |
 
-**Vercel Authentication is on.** An unauthenticated request to the deployment URL gets
-`302` to `vercel.com/sso-api`, so the staging build is not world-readable. That default
-was kept rather than disabled: an unfinished application has no reason to be public, and
-`X-Robots-Tag: noindex` is set as well.
+**Vercel Authentication is on — for deployment URLs only.** An unauthenticated request
+to the team-scoped deployment URL gets `302` to `vercel.com/sso-api`. **The production
+alias `https://organic-growth-os-web.vercel.app` is public**, verified in Cloud 0.2 by
+fetching it and matching the response headers to `next.config.ts`. Vercel's "Standard"
+deployment protection covers preview and per-deployment URLs and deliberately leaves the
+production domain open; the earlier version of this paragraph said the staging build was
+not world-readable, which was true of the URL that was checked and false of the alias.
+The exposure today is a Phase 0.1 static shell with no data and no credential. When the
+dashboard exists, decide explicitly whether the production alias stays public or moves
+to "All Deployments" protection. `X-Robots-Tag: noindex` is set.
 
 ### Deviation to be aware of
 
@@ -141,11 +157,30 @@ would have created `itamaravis-art/organic-growth-os` as a private copy and link
 project to the copy — silently detaching CI, the gated `staging` environment and its secrets
 from the deployment. It was stopped before the `Create` button.
 
-## 6. Deferred to Cloud 0.2
+## 6. Cloud 0.2: the custom domain, and why it is required rather than cosmetic
 
-- Hosting for `apps/api` on a container platform, with the runtime connection string,
-  `AUTH_SESSION_SECRET` and production cookie settings.
-- A custom domain and the same-origin arrangement that lets `__Host-` session cookies
-  work between web and API (ADR-0013, SECURITY.md §2).
+The web deployment moves from its generated `*.vercel.app` hostname to
+`app.<domain>`, a subdomain of the same registrable domain the API serves from
+(`api.<domain>`). That is the whole reason the domain exists in this phase.
+
+`*.vercel.app` and the API platform's own domain are both on the Public Suffix List, so
+they are different *sites*. Session and CSRF cookies carry the `__Host-` prefix and
+`SameSite=Lax`, and `AuthCookiePolicy.sameSite` deliberately has no `'none'` — so on
+two platform domains the browser would simply not send the session cookie, and no
+amount of CORS would change that. One registrable domain makes the two origins
+same-site and every cookie property stays exactly as designed. Full reasoning, and the
+same-origin-proxy alternative that was evaluated and rejected, in
+`docs/cloud/API-STAGING.md` §7.
+
+Consequences for this project:
+
+- **Vercel Authentication.** It is on, and it gates the deployment URL. It stays on for
+  the generated hostname; whether it stays on for `app.<domain>` is a decision for when
+  the dashboard exists, not now.
+- **The API's CORS allowlist** is the exact `https://app.<domain>` origin, and nothing
+  else.
+
+## 7. Still deferred
+
 - The Content-Security-Policy that ships with the dashboard (SECURITY.md §8).
-- `apps/worker` — containers, never Vercel Functions (ADR-0005, ADR-0006).
+- `apps/worker` — containers, never Vercel Functions (ADR-0005, ADR-0006). Cloud 0.3.

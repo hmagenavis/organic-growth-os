@@ -1,8 +1,11 @@
 # CLOUD-ARCHITECTURE.md
-# Organic Growth OS — Cloud Foundation 0.1
+# Organic Growth OS — Cloud Foundation
 
-Status: **GitHub live and CI green; Supabase project created and verified compatible;
-Vercel not yet created** (2026-09-01). See `docs/phases/CLOUD-0.1-IMPLEMENTATION.md`.
+Status: **GitHub live and CI green; Supabase staging verified; Vercel deployed;
+`apps/api` hosting decided and the repository ready, service not yet created**
+(2026-09-02). See `docs/phases/CLOUD-0.1-IMPLEMENTATION.md`,
+`docs/phases/CLOUD-0.2A-IMPLEMENTATION.md` and
+`docs/phases/CLOUD-0.2-IMPLEMENTATION.md`.
 
 The goal of this foundation is narrow: **remove the local Windows/Docker environment as
 a single point of failure.** It changes where things run. It changes nothing about how
@@ -20,15 +23,27 @@ GitHub
         └── staging-database (manual dispatch only) ── migrations + env verification
 
 Vercel
-  └── apps/web (Next.js)            ── browser-facing, no database credential today
+  └── apps/web (Next.js)            ── app.<domain>, browser-facing, no database credential
+
+Render (Cloud 0.2)
+  └── apps/api (Fastify, Docker)    ── api.<domain>, one always-on instance, Frankfurt,
+                                       long-lived pool, argon2id, transaction-local tenancy
 
 Supabase
   └── managed PostgreSQL 17 + pgvector + citext   ── development/staging only
 
-Separate service (NOT this task)
-  ├── apps/api (Fastify)            ── long-lived pool, argon2id, transaction-local tenancy
+Not yet deployed
   └── apps/worker                   ── queue/crawler/Playwright, Cloud 0.3+
 ```
+
+**Web and API are sibling subdomains of one registrable domain, and that is a security
+decision rather than a naming convention.** Session and CSRF cookies carry the
+`__Host-` prefix and `SameSite=Lax`, and `AuthCookiePolicy.sameSite` deliberately has
+no `'none'`. On two unrelated platform domains — `*.vercel.app` and `*.onrender.com`,
+both on the Public Suffix List — the browser would simply not send the session cookie.
+One registrable domain makes the two origins same-site, so every cookie property stays
+exactly as designed. The alternative (a same-origin proxy through Vercel) and why it
+was not chosen are in `docs/cloud/API-STAGING.md` §7.
 
 ## 2. What did not change, and why that is the point
 
@@ -96,8 +111,9 @@ deployment is a browser-facing Next.js app with one public variable. That is the
 smallest correct surface, and it is why preview deployments are safe by construction
 rather than by policy (§5).
 
-The API's own hosting target — a container platform — is Cloud 0.2. It is deliberately
-not chosen here.
+The API's own hosting target is **Render, Frankfurt, Docker, one always-on instance**,
+chosen in Cloud 0.2. The reasoning, the alternatives and the cost posture are in
+`docs/cloud/API-STAGING.md` §2.
 
 ## 5. Preview safety
 
@@ -107,7 +123,12 @@ every contributor can reshape the shared database.
 
 The model here removes the question rather than answering it:
 
-- Vercel holds **no** `DATABASE_*` variable of any class in Cloud 0.1.
+- Vercel holds **no** `DATABASE_*` variable of any class, in Cloud 0.1 or after Cloud
+  0.2. Its only variables are `NEXT_PUBLIC_APP_NAME` and `NEXT_PUBLIC_API_BASE_URL`,
+  both public by definition.
+- The Render service's pull-request previews are **off**, for the same reason: a
+  preview would need that service's environment to be useful, and that environment
+  holds the runtime database credential and the session secret.
 - The only workflow holding a staging credential is `staging-database.yml`, which is
   `workflow_dispatch`-only and bound to the `staging` GitHub Environment. It has no
   `push` and no `pull_request` trigger, so no branch and no preview can invoke it.
@@ -120,7 +141,8 @@ credentials.
 
 ## 6. Cost posture
 
-One Supabase project, one Vercel project, GitHub Actions on the free tier. No replicas,
+One Supabase project, one Vercel project, one Render service on its smallest always-on
+instance, GitHub Actions on the free tier. No replicas,
 no analytics vendor, no Redis, no paid queue, no second database. Supabase free-tier
 projects pause after inactivity, which is acceptable for staging and is the reason
 `db:verify:staging` is run explicitly rather than on a schedule.
@@ -136,5 +158,6 @@ phase, and the integration belongs to that phase. No speculative storage code ex
 
 - `docs/cloud/SUPABASE-STAGING.md` — database compatibility, roles, connection modes
 - `docs/cloud/VERCEL-STAGING.md` — web deployment settings and the API decision
+- `docs/cloud/API-STAGING.md` — where the API runs, its trust boundary, cookies and CORS
 - `docs/cloud/ENVIRONMENT-MATRIX.md` — every variable, its class, and where it may live
 - `docs/phases/CLOUD-0.1-IMPLEMENTATION.md` — what was done, what is blocked

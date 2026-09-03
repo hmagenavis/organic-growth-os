@@ -1,0 +1,157 @@
+# Render Blueprint for the staging API.
+#
+# Checked in so the service definition is reviewable in a diff rather than living only
+# in a dashboard — the same reason `apps/web/vercel.json` exists.
+#
+# **No secret is in this file, and none may ever be added to it.** Every credential is
+# declared with `sync: false`, which tells Render the value is entered in the service's
+# own environment and is never read from the repository
+# (docs/cloud/ENVIRONMENT-MATRIX.md).
+#
+# Three settings below are security decisions rather than defaults, and each is
+# explained where it appears: `numInstances`, the *absence* of `previews`, and
+# `API_TRUST_PROXY`.
+
+services:
+  - type: web
+    name: organic-os-api-staging
+    runtime: docker
+    # Frankfurt, because the Supabase project is `eu-central-1`. The API holds a
+    # long-lived pool and every authorized request is a transaction, so round-trip
+    # latency to the database is paid many times per request.
+    region: frankfurt
+
+    # `free`, deliberately and temporarily. A free instance spins down after ~15
+    # minutes of inactivity and takes ~50 seconds to wake, and the honest accounting of
+    # that is in docs/phases/CLOUD-0.2-IMPLEMENTATION.md §10:
+    #
+    #   * the login rate limiter is **not** weakened — its window is 15 minutes, the
+    #     same order as the spin-down threshold, so an attacker who waits out a
+    #     spin-down has waited out the window anyway;
+    #   * `pnpm verify:e2e` still proves login, session, CSRF and the Phase 0.4
+    #     authorization rules against a deployed service, because it carries its own
+    #     cookie jar;
+    #   * what stays unproven is real browser cookie behaviour, which needs the
+    #     sibling-subdomain arrangement in docs/cloud/API-STAGING.md §7.
+    #
+    # Moving to `starter` is a one-word change here. Do it before anyone outside the
+    # team is pointed at this service.
+    plan: free
+
+    dockerfilePath: ./apps/api/Dockerfile
+    dockerContext: .
+
+    # The Cloud 0.2 branch, until its pull request merges; then `main`. Render deploys
+    # the branch named *here*, so pointing this at `main` before the Dockerfile is on
+    # `main` would build nothing.
+    branch: cloud/0.2-api-staging-runtime
+
+    # Deploy a commit only once its GitHub checks pass — the CI workflow (unit,
+    # integration on real PostgreSQL, audit) and the API container workflow. A commit
+    # that fails either never reaches the service (docs/cloud/API-STAGING.md §9).
+    autoDeployTrigger: checksPass
+
+    # Pull-request previews are OFF, by omission: Render generates previews only when a
+    # service opts in with `previews.generation`, and this one deliberately does not. A
+    # preview environment would need this service's environment to be useful, and that
+    # environment holds the staging runtime database credential and the session secret
+    # — so any contributor's branch would receive both. Preview data belongs on an
+    # isolated database (Supabase branching), never on shared staging
+    # (docs/cloud/CLOUD-ARCHITECTURE.md §5). Do not add `previews:` here.
+
+    # Exactly one instance, and this is load-bearing rather than thrift: the login rate
+    # limiter is in-memory (`packages/auth/src/rate-limit/memory.ts`). One instance
+    # means it behaves exactly as designed. Two would mean two independent limiters,
+    # each counting a fraction of the attempts, with no shared store to fix it until a
+    # later phase (docs/cloud/API-STAGING.md §8).
+    #
+    # A free instance is single-instance by construction, so this is stated for the day
+    # the plan changes rather than for today. If Render rejects the key on the free
+    # plan, remove it — and put it back with the plan.
+    numInstances: 1
+
+    # Readiness, not liveness: a deploy is promoted only once the new instance can
+    # actually reach the database over verified TLS. A build that starts but cannot
+    # serve must not replace one that can.
+    healthCheckPath: /health/ready
+
+    envVars:
+      # ---- Non-secret runtime configuration -------------------------------------
+      - key: NODE_ENV
+        value: production
+      - key: LOG_LEVEL
+        value: info
+      - key: API_HOST
+        value: 0.0.0.0
+      # API_PORT is deliberately absent. Render injects PORT and routes to it, and the
+      # configuration falls back to it (`packages/config/src/server.ts`). Setting
+      # API_PORT here would win over PORT and leave the service listening where nothing
+      # routes.
+
+      # The published Supabase root CA, shipped in the image. It is what makes the
+      # database connection `verify-full` rather than merely encrypted, and its absence
+      # refuses the connection rather than downgrading it. A root certificate is public
+      # by construction — a variable, never a secret.
+      - key: DATABASE_SSL_ROOT_CERT
+        value: /repo/certs/supabase-prod-ca-2021.crt
+
+      # Conservative, and deliberately so: one instance behind Supavisor. A large
+      # client-side pool multiplied by instances is how a shared staging database runs
+      # out of connections (docs/cloud/API-STAGING.md §4).
+      - key: DATABASE_MAX_CONNECTIONS
+        value: '5'
+      - key: DATABASE_STATEMENT_TIMEOUT_MS
+        value: '30000'
+      - key: DATABASE_IDLE_TX_TIMEOUT_MS
+        value: '15000'
+
+      # The proxies in front of this process, measured on the deployed service rather
+      # than assumed, and nothing an internet client can be:
+      #
+      #   * `loopback`    — Render hands external traffic to the container through a
+      #                     proxy on the same host; with `uniquelocal` alone every
+      #                     browser logged `ip: 127.0.0.1`.
+      #   * `uniquelocal` — Render's health checker arrives from a private 10.x address.
+      #   * the CIDRs     — Cloudflare's published edge ranges (cloudflare.com/ips-v4,
+      #                     /ips-v6). `*.onrender.com` is fronted by Cloudflare, so the
+      #                     first public hop in `x-forwarded-for` is a Cloudflare edge
+      #                     (`172.68.22.85`, `162.158.94.136` were observed), and
+      #                     without these the client was reported as Cloudflare.
+      #
+      # Walking the chain from the socket inwards now stops at the first address that
+      # is none of the above — the browser. A forged entry a client appends sits to the
+      # left of its real address and is never reached, because Render's proxy appends
+      # the true peer. Pinned, not fetched at runtime; refresh from Cloudflare's lists
+      # if a browser is ever logged as a 1xx/2xxx address again. A hop count is
+      # refused by `parseTrustProxy` because fastify@5 enforces nothing for it, and
+      # `true` is refused because it would let anyone set their own `request.ip` —
+      # the login rate-limit key (docs/cloud/API-STAGING.md §5).
+      - key: API_TRUST_PROXY
+        value: loopback,uniquelocal,173.245.48.0/20,103.21.244.0/22,103.22.200.0/22,103.31.4.0/22,141.101.64.0/18,108.162.192.0/18,190.93.240.0/20,188.114.96.0/20,197.234.240.0/22,198.41.128.0/17,162.158.0.0/15,104.16.0.0/13,104.24.0.0/14,172.64.0.0/13,131.0.72.0/22,2400:cb00::/32,2606:4700::/32,2803:f800::/32,2405:b500::/32,2405:8100::/32,2a06:98c0::/29,2c0f:f248::/32
+
+      # Reported by /health and /health/ready. A literal, so which version is deployed
+      # is answerable from a diff rather than from a dashboard.
+      - key: SERVICE_VERSION
+        value: 0.2.0-staging
+
+      # ---- Values entered in the Render dashboard, never in this file ------------
+      # `sync: false` means Render prompts for the value and stores it in the service's
+      # own environment. Nothing here is readable from the repository or from a build
+      # log.
+
+      # The exact origin of the web deployment — one origin, no wildcard. It is not a
+      # secret; it is here rather than as a literal only because the domain is chosen
+      # at deployment time.
+      - key: CORS_ALLOWED_ORIGINS
+        sync: false
+
+      # The runtime role only: no DDL, no BYPASSRLS, no INSERT on organizations or
+      # users. The migration and provisioning credentials are not here and must never
+      # be — a process that cannot reshape the schema cannot be made to.
+      - key: DATABASE_URL
+        sync: false
+
+      # Keys the CSRF token MAC. A dedicated staging value, generated for this service
+      # and used nowhere else.
+      - key: AUTH_SESSION_SECRET
+        sync: false

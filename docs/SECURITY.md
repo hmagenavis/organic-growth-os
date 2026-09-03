@@ -40,6 +40,15 @@ built architecture; this section is the requirement.
   login) for all mutating requests, login included. The signature is what defeats
   cookie injection from a sibling subdomain; SameSite is defense-in-depth, not the
   only control.
+- **Cookie topology is a deployment constraint, not a deployment detail.** `__Host-`
+  forbids a `Domain` attribute, so the cookie is host-only, and
+  `AuthCookiePolicy.sameSite` accepts `'lax' | 'strict'` and deliberately has no
+  `'none'`. Web and API must therefore be **same-site**: either one origin, or sibling
+  subdomains of one registrable domain. Two unrelated platform hostnames
+  (`*.vercel.app`, `*.onrender.com`) are different sites and the browser will not send
+  the session cookie. Adding `SameSite=None`, dropping `HttpOnly`, moving the token to
+  `localStorage` or substituting a JWT are all **out of bounds** as answers to that
+  (Cloud 0.2; `docs/cloud/API-STAGING.md` §7).
 - **Authentication is not authorization.** A valid session establishes identity only.
   It never sets `app.current_org_id` and confers no access to any organization-scoped
   table; that requires the separate authorization step in §3/§4.
@@ -275,7 +284,21 @@ required before adding additional platform operators.
 ## 8. Platform hardening
 
 - Rate limiting: global, per-session, per-org, and per-route buckets (Redis);
-  auth endpoints strictest.
+  auth endpoints strictest. **Today it is in-memory and therefore per-instance**, which
+  is correct only while there is exactly one instance — the staging service pins
+  `numInstances: 1` for that reason, and autoscaling must not be enabled before a
+  shared store exists (`docs/cloud/API-STAGING.md` §8).
+- **Proxy trust boundary.** `request.ip` is the login rate-limit key and the address on
+  every `sessions.ip` row, so `trustProxy` is a security setting. It defaults to
+  `false` — the socket peer, unforgeable. A proxied deployment must *name* what is in
+  front of it: `API_TRUST_PROXY` accepts addresses, CIDR blocks or Fastify's named
+  groups, and refuses both `true` (which would let anyone set their own `request.ip`)
+  and a hop count (which `fastify@5` silently enforces as trusting nothing, so it would
+  read as configured and behave as `false`).
+- **CORS is not a CSRF control and is never a wildcard.** The allowlist is exact-match
+  and empty by default; `*` cannot be configured, and credentials are granted only
+  alongside an exact origin. What stops a hostile page acting as the user is the signed,
+  session-bound CSRF token.
 - Security headers (web): CSP (no unsafe-inline scripts), HSTS, X-Content-Type-Options,
   Referrer-Policy, frame-ancestors 'none'.
 - Input validation: every request body/query validated by Zod at the boundary;

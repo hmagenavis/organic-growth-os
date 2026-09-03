@@ -12,6 +12,8 @@ describe('parseServerEnv', () => {
     expect(env.SERVICE_VERSION).toBe('0.0.0-dev');
     expect(env.API_HOST).toBe('127.0.0.1');
     expect(env.API_PORT).toBe(3001);
+    expect(env.API_TRUST_PROXY).toBe(false);
+    expect(env.CORS_ALLOWED_ORIGINS).toEqual([]);
     expect(env.WORKER_HEARTBEAT_INTERVAL_MS).toBe(60_000);
   });
 
@@ -34,6 +36,42 @@ describe('parseServerEnv', () => {
 
   it('rejects a non-numeric port', () => {
     expect(() => parseServerEnv({ API_PORT: 'not-a-port' })).toThrow(EnvValidationError);
+  });
+
+  it('falls back to the platform-injected PORT when API_PORT is absent', () => {
+    expect(parseServerEnv({ PORT: '10000' }).API_PORT).toBe(10_000);
+  });
+
+  it('keeps API_PORT authoritative when the platform also injects PORT', () => {
+    expect(parseServerEnv({ API_PORT: '3001', PORT: '10000' }).API_PORT).toBe(3001);
+  });
+
+  it('treats an empty API_PORT as absent rather than as a value', () => {
+    expect(parseServerEnv({ API_PORT: '', PORT: '10000' }).API_PORT).toBe(10_000);
+    expect(parseServerEnv({ API_PORT: '', PORT: '' }).API_PORT).toBe(3001);
+  });
+
+  it('does not let PORT decide the bind address', () => {
+    expect(parseServerEnv({ PORT: '10000' }).API_HOST).toBe('127.0.0.1');
+  });
+
+  it('parses the proxy trust boundary and the CORS allowlist', () => {
+    const env = parseServerEnv({
+      API_TRUST_PROXY: 'uniquelocal',
+      CORS_ALLOWED_ORIGINS: 'https://app.example.com, https://b.example.com/',
+    });
+
+    expect(env.API_TRUST_PROXY).toEqual(['uniquelocal']);
+    expect(env.CORS_ALLOWED_ORIGINS).toEqual(['https://app.example.com', 'https://b.example.com']);
+  });
+
+  it('fails closed on an unusable proxy or CORS setting rather than defaulting', () => {
+    expect(() => parseServerEnv({ API_TRUST_PROXY: 'true' })).toThrow(EnvValidationError);
+    expect(() => parseServerEnv({ API_TRUST_PROXY: '1' })).toThrow(EnvValidationError);
+    expect(() => parseServerEnv({ CORS_ALLOWED_ORIGINS: '*' })).toThrow(EnvValidationError);
+    expect(() => parseServerEnv({ CORS_ALLOWED_ORIGINS: 'http://app.example.com' })).toThrow(
+      EnvValidationError,
+    );
   });
 
   it('reports the offending variable name', () => {

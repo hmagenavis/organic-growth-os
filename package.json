@@ -19,8 +19,10 @@
     "db:migrate": "pnpm --filter @organic-os/database db:migrate",
     "db:status": "pnpm --filter @organic-os/database db:status",
     "db:reset": "pnpm --filter @organic-os/database db:reset",
-    "provision:organization": "pnpm --filter @organic-os/database provision:organization --",
+    "provision:organization": "pnpm --filter @organic-os/database provision:organization",
     "db:verify:staging": "pnpm --filter @organic-os/database db:verify:staging",
+    "api:staging": "node --env-file=.env.api.local apps/api/dist/index.js",
+    "verify:e2e": "pnpm --filter @organic-os/api verify:e2e",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "sessions:cleanup": "pnpm --filter @organic-os/worker sessions:cleanup"

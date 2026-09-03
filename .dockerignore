@@ -1,0 +1,46 @@
+# Build context for apps/api/Dockerfile. The root of the repository is the context, so
+# this file is what keeps a developer's machine out of the image.
+
+# Credentials. This is the entry that matters: `.env.api.local` and `.env.staging.local`
+# hold real staging database passwords and the session secret, and nothing in the image
+# may ever contain one (docs/cloud/ENVIRONMENT-MATRIX.md §9).
+.env
+.env.*
+
+# Installed and generated trees — reinstalled and rebuilt inside the image, so copying
+# them in would only risk a host-platform binary (`@node-rs/argon2`) shadowing the
+# Linux one.
+node_modules
+**/node_modules
+dist
+**/dist
+.next
+**/.next
+out
+**/out
+*.tsbuildinfo
+**/*.tsbuildinfo
+.turbo
+**/.turbo
+coverage
+**/coverage
+
+# Version control and tooling metadata
+.git
+.gitignore
+.github
+.vscode
+.idea
+.claude
+
+# Nothing in the image reads documentation, and no test runs in it.
+docs
+**/*.md
+!README.md
+
+# Local orchestration, not used by the deployed service
+docker-compose.yml
+
+*.log
+.DS_Store
+Thumbs.db
