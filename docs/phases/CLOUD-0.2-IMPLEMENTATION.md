@@ -1,9 +1,19 @@
 # CLOUD-0.2 — Fastify API staging runtime (implementation record)
 
-Status: **BLOCKED at the human boundary** — the repository half is complete and green;
-creating the Render service, attaching the domain and entering the secrets are steps
-only the account owner can take (§9).
+Status: **BLOCKED — deployment deferred by decision (2026-09-03).** The repository half
+is complete and verified green in CI. The deployment half was not attempted: it needs a
+paid always-on instance, and the account owner chose not to spend on staging hosting
+yet. Nothing here expires; §9 is the list of steps that resume it.
 Architecture: `docs/cloud/API-STAGING.md`.
+
+**What that costs, stated plainly.** `apps/api` still runs only on an operator's
+machine, so there is no environment in which a browser can reach the system. The
+application-level proof from Cloud 0.2A stands — a real pooled connection to managed
+staging over verified TLS, a real login, a real session — and everything in this phase
+is proven as far as a container can prove it (§8). What is *not* proven is the network:
+the cookie topology, the CORS grant against a real browser origin, and the trust
+boundary against a real load balancer. Those are verified when the service exists, and
+not before. This document does not claim them.
 
 Cloud 0.1 put the web app on Vercel and the database on Supabase. Cloud 0.2A proved the
 API works against that database from the operator's own machine. What was left was the
@@ -237,4 +247,23 @@ through a chat message.
 
 ## 10. Results
 
-_To be completed once the service exists._
+_Deployment results pending; see the status line. Repository results are in §8._
+
+### If the deployment resumes on a free instance
+
+Render's `Free` instance type spins down after ~15 minutes of inactivity and takes
+~50 seconds to wake. Two consequences, and only one of them is a real loss:
+
+- **The login rate limiter is unaffected.** This looked like the problem and is not:
+  the limiter's window is 15 minutes, the same order as the spin-down threshold, so an
+  attacker who waits out a spin-down has waited out the window anyway. A spin-down
+  hands them nothing they did not already have.
+- **Browser cookie behaviour stays unverified**, because a free instance is still
+  reached on a platform hostname unless a custom domain is attached. `pnpm verify:e2e`
+  would still pass in full — it carries its own cookie jar and does not enforce
+  SameSite — so login, session, CSRF and the Phase 0.4 authorization rules would all be
+  proven against a deployed service. The one thing that would remain proven only on
+  paper is §3, and §3 is the part that matters most.
+
+A free instance is therefore a real intermediate step rather than a pretend one, as
+long as that last sentence is not forgotten.
